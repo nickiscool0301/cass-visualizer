@@ -1,4 +1,13 @@
-import type { Cluster, ClusterEvent, Keyspace, Node } from "../types/cluster";
+import type {
+  Cluster,
+  ClusterEvent,
+  Keyspace,
+  Node,
+  NodeStorage,
+  SSTable,
+  StoredRow,
+} from "../types/cluster";
+import { getReplicaNodeIds } from "../lib/replicaPlacement";
 
 const palette = [
   "#ef4444", // red-500
@@ -58,6 +67,55 @@ function allocateColor(nodes: Node[]): string {
   return palette[nodes.length % palette.length];
 }
 
+function createEmptyStorage(): NodeStorage {
+  return { commitLog: [], memtable: [], sstables: [] };
+}
+
+function hashPartitionKey(key: string, tokenRange: [number, number]): number {
+  let hash = 0;
+  for (let i = 0; i < key.length; i++) {
+    hash = (hash << 5) - hash + key.charCodeAt(i);
+    hash |= 0;
+  }
+  const [min, max] = tokenRange;
+  const span = max - min + 1;
+  return min + (Math.abs(hash) % span);
+}
+
+function flushMemtable(storage: NodeStorage): NodeStorage {
+  if (storage.memtable.length === 0) return storage;
+  const sortedRows = [...storage.memtable].sort((a, b) =>
+    a.partitionKey.localeCompare(b.partitionKey)
+  );
+  const newSstable: SSTable = {
+    id: generateId("sstable"),
+    rows: sortedRows,
+    createdAt: now(),
+    level: 0,
+  };
+  return {
+    commitLog: [],
+    memtable: [],
+    sstables: [newSstable, ...storage.sstables],
+  };
+}
+
+function writeToNode(
+  storage: NodeStorage,
+  partitionKey: string,
+  value: string
+): NodeStorage {
+  const row: StoredRow = { partitionKey, value, timestamp: now() };
+  const nextCommitLog = [row, ...storage.commitLog];
+  const nextMemtable = [row, ...storage.memtable];
+  const needsFlush = nextMemtable.length >= 5;
+  if (needsFlush) {
+    const flushed = flushMemtable({ ...storage, commitLog: nextCommitLog, memtable: nextMemtable });
+    return flushed;
+  }
+  return { ...storage, commitLog: nextCommitLog, memtable: nextMemtable };
+}
+
 export function createInitialCluster(): Cluster {
   const tokenRange: [number, number] = [0, 999];
   const nodeCount = 3;
@@ -68,6 +126,7 @@ export function createInitialCluster(): Cluster {
     tokens,
     status: "up",
     color: palette[i % palette.length],
+    storage: createEmptyStorage(),
   }));
   const keyspace: Keyspace = {
     id: generateId("ks"),
@@ -83,6 +142,7 @@ export function createInitialCluster(): Cluster {
     events: addEvent([], "Cluster initialized with 3 nodes"),
     selectedNodeId: null,
     activeKeyspaceId: keyspace.id,
+    activeTab: "topology",
   };
 }
 
@@ -94,7 +154,10 @@ export type ClusterAction =
   | { type: "REBALANCE_TOKENS" }
   | { type: "RESET_CLUSTER" }
   | { type: "SELECT_NODE"; nodeId: string | null }
-  | { type: "SET_ACTIVE_KEYSPACE"; keyspaceId: string };
+  | { type: "SET_ACTIVE_KEYSPACE"; keyspaceId: string }
+  | { type: "SET_ACTIVE_TAB"; tab: "topology" | "storage" }
+  | { type: "WRITE"; partitionKey: string; value: string }
+  | { type: "FLUSH_MEMTABLE"; nodeId: string };
 
 export function clusterReducer(state: Cluster, action: ClusterAction): Cluster {
   switch (action.type) {
@@ -107,6 +170,7 @@ export function clusterReducer(state: Cluster, action: ClusterAction): Cluster {
         tokens: newTokens,
         status: "up",
         color: allocateColor(state.nodes),
+        storage: createEmptyStorage(),
       };
       return {
         ...state,
@@ -193,6 +257,59 @@ export function clusterReducer(state: Cluster, action: ClusterAction): Cluster {
 
     case "SET_ACTIVE_KEYSPACE": {
       return { ...state, activeKeyspaceId: action.keyspaceId };
+    }
+
+    case "SET_ACTIVE_TAB": {
+      return { ...state, activeTab: action.tab };
+    }
+
+    case "WRITE": {
+      const token = hashPartitionKey(action.partitionKey, state.tokenRange);
+      const activeKeyspace = state.keyspaces.find((k) => k.id === state.activeKeyspaceId);
+      const rf = activeKeyspace?.replicationFactor ?? 1;
+      const replicaIds = getReplicaNodeIds(token, rf, state.nodes);
+      if (replicaIds.length === 0) {
+        return {
+          ...state,
+          events: addEvent(state.events, "No replicas available for write"),
+        };
+      }
+      const nodes = state.nodes.map((node) => {
+        if (!replicaIds.includes(node.id)) return node;
+        return {
+          ...node,
+          storage: writeToNode(node.storage, action.partitionKey, action.value),
+        };
+      });
+      const flushed = nodes.some(
+        (n) =>
+          replicaIds.includes(n.id) &&
+          state.nodes.find((prev) => prev.id === n.id)!.storage.memtable.length >= 4 &&
+          n.storage.memtable.length === 0
+      );
+      const message = flushed
+        ? `Write to ${replicaIds.length} replica(s); memtable flushed to SSTable`
+        : `Write to ${replicaIds.length} replica(s) at token ${token}`;
+      return {
+        ...state,
+        nodes,
+        events: addEvent(state.events, message),
+      };
+    }
+
+    case "FLUSH_MEMTABLE": {
+      const target = state.nodes.find((n) => n.id === action.nodeId);
+      if (!target) return state;
+      const nodes = state.nodes.map((node) =>
+        node.id === action.nodeId
+          ? { ...node, storage: flushMemtable(node.storage) }
+          : node
+      );
+      return {
+        ...state,
+        nodes,
+        events: addEvent(state.events, `Memtable flushed on ${target.name}`),
+      };
     }
 
     default:

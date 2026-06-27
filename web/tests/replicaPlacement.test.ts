@@ -5,12 +5,13 @@ import {
   getReplicaNodeIds,
   getNodeOwnedRanges,
 } from "../src/lib/replicaPlacement";
+import { makeNode } from "./fixtures";
 import type { Node } from "../src/types/cluster";
 
 const nodes: Node[] = [
-  { id: "a", name: "A", tokens: [250], status: "up", color: "#a00" },
-  { id: "b", name: "B", tokens: [500], status: "up", color: "#0a0" },
-  { id: "c", name: "C", tokens: [750], status: "up", color: "#00a" },
+  makeNode({ id: "a", name: "A", tokens: [250], status: "up", color: "#a00" }),
+  makeNode({ id: "b", name: "B", tokens: [500], status: "up", color: "#0a0" }),
+  makeNode({ id: "c", name: "C", tokens: [750], status: "up", color: "#00a" }),
 ];
 
 describe("getAllTokenPoints", () => {
@@ -53,15 +54,15 @@ describe("getNodeOwnedRanges", () => {
   });
 
   it("returns multiple ranges for a node with multiple tokens", () => {
-    const multi: Node = {
+    const multi = makeNode({
       id: "m",
       name: "M",
       tokens: [200, 600],
       status: "up",
       color: "#000",
-    };
+    });
     const others: Node[] = [
-      { id: "x", name: "X", tokens: [400, 800], status: "up", color: "#fff" },
+      makeNode({ id: "x", name: "X", tokens: [400, 800], status: "up", color: "#fff" }),
     ];
     const ranges = getNodeOwnedRanges("m", [multi, others[0]], [0, 999]);
     expect(ranges).toContainEqual({ start: 801, end: 200, ownerId: "m" });

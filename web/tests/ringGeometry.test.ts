@@ -1,11 +1,12 @@
 import { describe, it, expect } from "vitest";
 import { getRingArcs } from "../src/lib/ringGeometry";
+import { makeNode } from "./fixtures";
 import type { Node } from "../src/types/cluster";
 
 const nodes: Node[] = [
-  { id: "a", name: "A", tokens: [250], status: "up", color: "#a00" },
-  { id: "b", name: "B", tokens: [500], status: "up", color: "#0a0" },
-  { id: "c", name: "C", tokens: [750], status: "up", color: "#00a" },
+  makeNode({ id: "a", name: "A", tokens: [250], status: "up", color: "#a00" }),
+  makeNode({ id: "b", name: "B", tokens: [500], status: "up", color: "#0a0" }),
+  makeNode({ id: "c", name: "C", tokens: [750], status: "up", color: "#00a" }),
 ];
 
 describe("getRingArcs", () => {

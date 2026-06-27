@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { Cluster, Node, Keyspace } from "../src/types/cluster";
+import { emptyStorage } from "./fixtures";
 
 describe("type smoke test", () => {
   it("accepts a minimal cluster", () => {
@@ -9,6 +10,7 @@ describe("type smoke test", () => {
       tokens: [500],
       status: "up",
       color: "#ff0000",
+      storage: emptyStorage(),
     };
     const ks: Keyspace = {
       id: "ks1",
@@ -24,6 +26,7 @@ describe("type smoke test", () => {
       events: [],
       selectedNodeId: null,
       activeKeyspaceId: "ks1",
+      activeTab: "topology",
     };
     expect(cluster.nodes).toHaveLength(1);
   });

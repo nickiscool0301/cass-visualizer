@@ -1,11 +1,31 @@
 export type NodeStatus = "up" | "leaving" | "down";
 
+export interface StoredRow {
+  partitionKey: string;
+  value: string;
+  timestamp: number;
+}
+
+export interface SSTable {
+  id: string;
+  rows: StoredRow[];
+  createdAt: number;
+  level: number;
+}
+
+export interface NodeStorage {
+  commitLog: StoredRow[];
+  memtable: StoredRow[];
+  sstables: SSTable[];
+}
+
 export interface Node {
   id: string;
   name: string;
   tokens: number[];
   status: NodeStatus;
   color: string;
+  storage: NodeStorage;
 }
 
 export interface Keyspace {
@@ -29,6 +49,7 @@ export interface Cluster {
   events: ClusterEvent[];
   selectedNodeId: string | null;
   activeKeyspaceId: string | null;
+  activeTab: "topology" | "storage";
 }
 
 export interface TokenRange {
