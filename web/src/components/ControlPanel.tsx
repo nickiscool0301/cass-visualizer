@@ -36,6 +36,17 @@ export function ControlPanel({ cluster, dispatch }: ControlPanelProps) {
         >
           Reset Cluster
         </button>
+        <button
+          onClick={() => {
+            if (cluster.selectedNodeId) {
+              dispatch({ type: "REMOVE_NODE", nodeId: cluster.selectedNodeId });
+            }
+          }}
+          disabled={!cluster.selectedNodeId || cluster.nodes.length <= 1}
+          className="rounded bg-red-600 px-3 py-1 text-sm hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          Remove Selected Node
+        </button>
       </div>
 
       <div>
