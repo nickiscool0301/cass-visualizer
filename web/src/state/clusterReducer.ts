@@ -38,6 +38,26 @@ function distributeTokensEvenly(nodeCount: number, tokenRange: [number, number])
   return tokens;
 }
 
+function nextNodeName(nodes: Node[]): string {
+  const numbers = nodes.map((n) => {
+    const match = /^node-(\d+)$/.exec(n.name);
+    return match ? Number(match[1]) : 0;
+  });
+  const maxNumber = numbers.length > 0 ? Math.max(...numbers) : 0;
+  return `node-${maxNumber + 1}`;
+}
+
+function allocateColor(nodes: Node[]): string {
+  const used = new Set(nodes.map((n) => n.color));
+  for (const color of palette) {
+    if (!used.has(color)) {
+      return color;
+    }
+  }
+  // All palette colors are in use; fall back to a deterministic rotation.
+  return palette[nodes.length % palette.length];
+}
+
 export function createInitialCluster(): Cluster {
   const tokenRange: [number, number] = [0, 999];
   const nodeCount = 3;
@@ -83,10 +103,10 @@ export function clusterReducer(state: Cluster, action: ClusterAction): Cluster {
         .pop() ?? [Math.floor(Math.random() * 1000)];
       const newNode: Node = {
         id: generateId("node"),
-        name: `node-${state.nodes.length + 1}`,
+        name: nextNodeName(state.nodes),
         tokens: newTokens,
         status: "up",
-        color: palette[state.nodes.length % palette.length],
+        color: allocateColor(state.nodes),
       };
       return {
         ...state,
@@ -99,7 +119,7 @@ export function clusterReducer(state: Cluster, action: ClusterAction): Cluster {
       if (state.nodes.length <= 1) {
         return {
           ...state,
-          events: addEvent(state.events, "cannot remove the last node"),
+          events: addEvent(state.events, "Cannot remove the last node"),
         };
       }
       const removed = state.nodes.find((n) => n.id === action.nodeId);

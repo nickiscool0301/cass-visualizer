@@ -22,7 +22,24 @@ describe("clusterReducer", () => {
     const oneNode = { ...initial, nodes: [initial.nodes[0]] };
     const next = clusterReducer(oneNode, { type: "REMOVE_NODE", nodeId: initial.nodes[0].id });
     expect(next.nodes).toHaveLength(1);
-    expect(next.events[0].message).toMatch(/cannot remove the last node/);
+    expect(next.events[0].message).toMatch(/Cannot remove the last node/);
+  });
+
+  it("does not reuse node names after removals", () => {
+    // initial: node-1, node-2, node-3
+    const withoutNode2 = clusterReducer(initial, { type: "REMOVE_NODE", nodeId: initial.nodes[1].id });
+    const addedAfterRemoval = clusterReducer(withoutNode2, { type: "ADD_NODE" });
+    const names = addedAfterRemoval.nodes.map((n) => n.name);
+    expect(new Set(names).size).toBe(names.length);
+    expect(names).toContain("node-4");
+  });
+
+  it("does not reuse colors while palette entries remain available", () => {
+    // Remove a node to free its color, then add a node and confirm color uniqueness.
+    const withoutNode2 = clusterReducer(initial, { type: "REMOVE_NODE", nodeId: initial.nodes[1].id });
+    const addedAfterRemoval = clusterReducer(withoutNode2, { type: "ADD_NODE" });
+    const colors = addedAfterRemoval.nodes.map((n) => n.color);
+    expect(new Set(colors).size).toBe(colors.length);
   });
 
   it("adds a keyspace", () => {
