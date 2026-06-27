@@ -29,7 +29,7 @@ function normalizeRange(range: TokenRange, tokenRange: [number, number]): { star
 export function getRingArcs(
   nodes: Node[],
   tokenRange: [number, number],
-  size: number
+  _size: number
 ): ArcSegment[] {
   const arcs: ArcSegment[] = [];
   for (const node of nodes) {
