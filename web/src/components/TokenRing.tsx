@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
-import * as d3 from "d3";
+import { arc } from "d3-shape";
 import type { Cluster } from "../types/cluster";
-import { getRingArcs, getRingDimensions } from "../lib/ringGeometry";
+import { getRingArcs, getRingDimensions, tokenToAngle } from "../lib/ringGeometry";
 import { getReplicaNodeIds } from "../lib/replicaPlacement";
 
 interface TokenRingProps {
@@ -22,13 +22,12 @@ export function TokenRing({ cluster, onSelectNode, highlightedNodeId }: TokenRin
     [cluster.nodes, cluster.tokenRange, size]
   );
 
-  const arcGenerator = d3
-    .arc<{
-      startAngle: number;
-      endAngle: number;
-      innerRadius: number;
-      outerRadius: number;
-    }>()
+  const arcGenerator = arc<{
+    startAngle: number;
+    endAngle: number;
+    innerRadius: number;
+    outerRadius: number;
+  }>()
     .innerRadius(dims.radius - dims.strokeWidth / 2)
     .outerRadius(dims.radius + dims.strokeWidth / 2)
     .startAngle((d) => d.startAngle)
@@ -78,10 +77,7 @@ export function TokenRing({ cluster, onSelectNode, highlightedNodeId }: TokenRin
           );
         })}
         {cluster.nodes.map((node) => {
-          const tokenAngles = node.tokens.map((t) => {
-            const ratio = t / (cluster.tokenRange[1] - cluster.tokenRange[0] + 1);
-            return ratio * 2 * Math.PI - Math.PI / 2;
-          });
+          const tokenAngles = node.tokens.map((t) => tokenToAngle(t, cluster.tokenRange) - Math.PI / 2);
           return tokenAngles.map((angle, i) => {
             const x = Math.cos(angle) * dims.radius;
             const y = Math.sin(angle) * dims.radius;

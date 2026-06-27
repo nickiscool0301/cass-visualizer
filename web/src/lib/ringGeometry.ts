@@ -10,7 +10,7 @@ export interface ArcSegment {
   color: string;
 }
 
-function tokenToAngle(token: number, tokenRange: [number, number]): number {
+export function tokenToAngle(token: number, tokenRange: [number, number]): number {
   const [min, max] = tokenRange;
   const ratio = (token - min) / (max - min + 1);
   return ratio * 2 * Math.PI;
