@@ -13,6 +13,11 @@ export function ControlPanel({ cluster, dispatch }: ControlPanelProps) {
 
   const activeKeyspace = cluster.keyspaces.find((k) => k.id === cluster.activeKeyspaceId);
 
+  const trimmedName = newKeyspaceName.trim();
+  const duplicateName = trimmedName !== "" && cluster.keyspaces.some((k) => k.name === trimmedName);
+  const newRfExceedsNodes = newKeyspaceRf > cluster.nodes.length;
+  const activeRfExceedsNodes = activeKeyspace ? activeKeyspace.replicationFactor > cluster.nodes.length : false;
+
   return (
     <div className="space-y-4 rounded-lg bg-slate-800 p-4">
       <h2 className="text-lg font-semibold">Controls</h2>
@@ -84,6 +89,11 @@ export function ControlPanel({ cluster, dispatch }: ControlPanelProps) {
             className="w-full"
           />
           <div className="text-right text-sm">{activeKeyspace.replicationFactor}</div>
+          {activeRfExceedsNodes && (
+            <p className="mt-1 text-xs text-amber-400">
+              Warning: RF exceeds the current node count ({cluster.nodes.length}).
+            </p>
+          )}
         </div>
       )}
 
@@ -121,6 +131,14 @@ export function ControlPanel({ cluster, dispatch }: ControlPanelProps) {
             Add
           </button>
         </div>
+        {duplicateName && (
+          <p className="mt-1 text-xs text-amber-400">Warning: keyspace name already exists.</p>
+        )}
+        {newRfExceedsNodes && (
+          <p className="mt-1 text-xs text-amber-400">
+            Warning: RF exceeds the current node count ({cluster.nodes.length}).
+          </p>
+        )}
       </div>
     </div>
   );
