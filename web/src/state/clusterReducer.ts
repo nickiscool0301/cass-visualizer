@@ -261,7 +261,7 @@ export function createInitialCluster(): Cluster {
     selectedNodeId: null,
     activeKeyspaceId: keyspace.id,
     activeTab: "topology",
-    animation: { writeTargetNodeId: null, flushedNodeId: null, joiningNodeId: null },
+    animation: { writeTargetNodeId: null, flushedNodeId: null, joiningNodeId: null, compactedNodeId: null },
   };
 }
 
@@ -398,6 +398,7 @@ export function clusterReducer(state: Cluster, action: ClusterAction): Cluster {
           state.events,
           `Compacted ${target.name} (${strategy}): ${prevCount} → ${newCount} SSTables`
         ),
+        animation: { ...state.animation, compactedNodeId: target.id },
       };
     }
 
@@ -483,7 +484,7 @@ export function clusterReducer(state: Cluster, action: ClusterAction): Cluster {
     }
 
     case "CLEAR_ANIMATION": {
-      return { ...state, animation: { writeTargetNodeId: null, flushedNodeId: null, joiningNodeId: null } };
+      return { ...state, animation: { writeTargetNodeId: null, flushedNodeId: null, joiningNodeId: null, compactedNodeId: null } };
     }
 
     default:

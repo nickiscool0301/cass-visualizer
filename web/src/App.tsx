@@ -12,10 +12,10 @@ function App() {
   const { cluster, dispatch } = useCluster();
 
   useEffect(() => {
-    if (cluster.animation.joiningNodeId === null) return;
+    if (cluster.animation.joiningNodeId === null && cluster.animation.compactedNodeId === null) return;
     const timer = setTimeout(() => dispatch({ type: "CLEAR_ANIMATION" }), 1600);
     return () => clearTimeout(timer);
-  }, [cluster.animation.joiningNodeId, dispatch]);
+  }, [cluster.animation.joiningNodeId, cluster.animation.compactedNodeId, dispatch]);
 
   const tabButton = (tab: "topology" | "storage" | "compaction", label: string) => (
     <button
@@ -48,7 +48,7 @@ function App() {
       </nav>
 
       <main className="mx-auto grid max-w-6xl gap-6 lg:grid-cols-3">
-        <section className="panel p-5 lg:col-span-2">
+        <section className="panel min-w-0 p-5 lg:col-span-2">
           {cluster.activeTab === "topology" && (
             <TokenRing
               cluster={cluster}
@@ -60,7 +60,7 @@ function App() {
           {cluster.activeTab === "compaction" && <CompactionView cluster={cluster} dispatch={dispatch} />}
         </section>
 
-        <aside className="space-y-5">
+        <aside className="min-w-0 space-y-5">
           {cluster.activeTab === "storage" && (
             <WriteSimulator cluster={cluster} dispatch={dispatch} />
           )}

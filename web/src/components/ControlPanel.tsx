@@ -122,13 +122,13 @@ export function ControlPanel({ cluster, dispatch }: ControlPanelProps) {
 
       <div className="mt-5">
         <h3 className="mb-2 text-sm font-medium text-slate-300">New Keyspace</h3>
-        <div className="flex flex-col gap-2 sm:flex-row">
+        <div className="flex flex-wrap items-center gap-2">
           <input
             type="text"
             placeholder="name"
             value={newKeyspaceName}
             onChange={(e) => setNewKeyspaceName(e.target.value)}
-            className="input flex-1"
+            className="input min-w-0 flex-1"
           />
           <input
             type="number"
@@ -141,7 +141,7 @@ export function ControlPanel({ cluster, dispatch }: ControlPanelProps) {
           <select
             value={newCompactionStrategy}
             onChange={(e) => setNewCompactionStrategy(e.target.value as CompactionStrategy)}
-            className="input"
+            className="input w-24"
           >
             <option value="STCS">STCS</option>
             <option value="LCS">LCS</option>

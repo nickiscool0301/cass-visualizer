@@ -47,6 +47,7 @@ export interface ClusterAnimation {
   writeTargetNodeId: string | null;
   flushedNodeId: string | null;
   joiningNodeId: string | null;
+  compactedNodeId: string | null;
 }
 
 export interface Cluster {
