@@ -144,9 +144,15 @@ function flushMemtable(storage: NodeStorage): NodeStorage {
 function writeToNode(
   storage: NodeStorage,
   partitionKey: string,
-  value: string
+  value: string,
+  ttlSeconds?: number
 ): NodeStorage {
-  const row: StoredRow = { partitionKey, value, timestamp: now() };
+  const timestamp = now();
+  const row: StoredRow = { partitionKey, value, timestamp };
+  if (ttlSeconds !== undefined) {
+    row.ttl = ttlSeconds;
+    row.expiresAt = timestamp + ttlSeconds * 1000;
+  }
   const nextCommitLog = [row, ...storage.commitLog];
   const nextMemtable = [row, ...storage.memtable];
   const needsFlush = nextMemtable.length >= 5;
@@ -157,7 +163,36 @@ function writeToNode(
   return { ...storage, commitLog: nextCommitLog, memtable: nextMemtable };
 }
 
-function mergeRows(rows: StoredRow[]): StoredRow[] {
+function deleteToNode(storage: NodeStorage, partitionKey: string): NodeStorage {
+  const row: StoredRow = {
+    partitionKey,
+    value: "[TOMBSTONE]",
+    timestamp: now(),
+    isTombstone: true,
+  };
+  const nextCommitLog = [row, ...storage.commitLog];
+  const nextMemtable = [row, ...storage.memtable];
+  const needsFlush = nextMemtable.length >= 5;
+  if (needsFlush) {
+    const flushed = flushMemtable({ ...storage, commitLog: nextCommitLog, memtable: nextMemtable });
+    return flushed;
+  }
+  return { ...storage, commitLog: nextCommitLog, memtable: nextMemtable };
+}
+
+function expireTTLRows(storage: NodeStorage, currentTime: number): NodeStorage {
+  let changed = false;
+  const nextMemtable = storage.memtable.map((row) => {
+    if (row.expiresAt !== undefined && row.expiresAt <= currentTime && !row.isTombstone) {
+      changed = true;
+      return { ...row, isTombstone: true, value: "[TOMBSTONE]", timestamp: currentTime };
+    }
+    return row;
+  });
+  return changed ? { ...storage, memtable: nextMemtable } : storage;
+}
+
+function mergeRows(rows: StoredRow[], gcGraceSeconds: number): StoredRow[] {
   const byKey = new Map<string, StoredRow>();
   for (const row of rows) {
     const existing = byKey.get(row.partitionKey);
@@ -165,12 +200,17 @@ function mergeRows(rows: StoredRow[]): StoredRow[] {
       byKey.set(row.partitionKey, row);
     }
   }
-  return Array.from(byKey.values()).sort((a, b) =>
-    a.partitionKey.localeCompare(b.partitionKey)
-  );
+  const gcGraceMs = gcGraceSeconds * 1000;
+  const currentTime = now();
+  return Array.from(byKey.values())
+    .filter((row) => !(row.isTombstone && currentTime - row.timestamp > gcGraceMs))
+    .sort((a, b) => a.partitionKey.localeCompare(b.partitionKey));
 }
 
-function compactSTCS(sstables: SSTable[]): { sstables: SSTable[]; compacted: boolean } {
+function compactSTCS(
+  sstables: SSTable[],
+  gcGraceSeconds: number
+): { sstables: SSTable[]; compacted: boolean } {
   const byLevel = new Map<number, SSTable[]>();
   for (const sstable of sstables) {
     const list = byLevel.get(sstable.level) ?? [];
@@ -182,7 +222,7 @@ function compactSTCS(sstables: SSTable[]): { sstables: SSTable[]; compacted: boo
     if (list.length >= 4) {
       const toCompact = list.slice(0, 4);
       const remaining = sstables.filter((s) => !toCompact.includes(s));
-      const mergedRows = mergeRows(toCompact.flatMap((s) => s.rows));
+      const mergedRows = mergeRows(toCompact.flatMap((s) => s.rows), gcGraceSeconds);
       const newSstable: SSTable = {
         id: generateId("sstable"),
         rows: mergedRows,
@@ -196,7 +236,10 @@ function compactSTCS(sstables: SSTable[]): { sstables: SSTable[]; compacted: boo
   return { sstables, compacted: false };
 }
 
-function compactLCS(sstables: SSTable[]): { sstables: SSTable[]; compacted: boolean } {
+function compactLCS(
+  sstables: SSTable[],
+  gcGraceSeconds: number
+): { sstables: SSTable[]; compacted: boolean } {
   const byLevel = new Map<number, SSTable[]>();
   for (const sstable of sstables) {
     const list = byLevel.get(sstable.level) ?? [];
@@ -209,7 +252,7 @@ function compactLCS(sstables: SSTable[]): { sstables: SSTable[]; compacted: bool
     const limit = level === 0 ? 4 : 2;
     if (list.length > limit) {
       const remaining = sstables.filter((s) => !list.includes(s));
-      const mergedRows = mergeRows(list.flatMap((s) => s.rows));
+      const mergedRows = mergeRows(list.flatMap((s) => s.rows), gcGraceSeconds);
       const newSstable: SSTable = {
         id: generateId("sstable"),
         rows: mergedRows,
@@ -224,12 +267,16 @@ function compactLCS(sstables: SSTable[]): { sstables: SSTable[]; compacted: bool
   return { sstables, compacted: false };
 }
 
-function compactNode(storage: NodeStorage, strategy: CompactionStrategy): NodeStorage {
+function compactNode(
+  storage: NodeStorage,
+  strategy: CompactionStrategy,
+  gcGraceSeconds: number
+): NodeStorage {
   if (strategy === "LCS") {
-    const result = compactLCS(storage.sstables);
+    const result = compactLCS(storage.sstables, gcGraceSeconds);
     return { ...storage, sstables: result.sstables };
   }
-  const result = compactSTCS(storage.sstables);
+  const result = compactSTCS(storage.sstables, gcGraceSeconds);
   return { ...storage, sstables: result.sstables };
 }
 
@@ -261,7 +308,8 @@ export function createInitialCluster(): Cluster {
     selectedNodeId: null,
     activeKeyspaceId: keyspace.id,
     activeTab: "topology",
-    animation: { writeTargetNodeId: null, flushedNodeId: null, joiningNodeId: null, compactedNodeId: null },
+    animation: { writeTargetNodeId: null, flushedNodeId: null, joiningNodeId: null, compactedNodeId: null, lastWriteAction: null },
+    gcGraceSeconds: 10,
   };
 }
 
@@ -278,6 +326,10 @@ export type ClusterAction =
   | { type: "SET_ACTIVE_KEYSPACE"; keyspaceId: string }
   | { type: "SET_ACTIVE_TAB"; tab: "topology" | "storage" | "compaction" | "knowledge" }
   | { type: "WRITE"; partitionKey: string; value: string }
+  | { type: "WRITE_TTL"; partitionKey: string; value: string; ttlSeconds: number }
+  | { type: "DELETE"; partitionKey: string }
+  | { type: "TICK_TTL" }
+  | { type: "SET_GC_GRACE_SECONDS"; seconds: number }
   | { type: "FLUSH_MEMTABLE"; nodeId: string }
   | { type: "CLEAR_ANIMATION" };
 
@@ -386,7 +438,7 @@ export function clusterReducer(state: Cluster, action: ClusterAction): Cluster {
       const prevCount = target.storage.sstables.length;
       const nodes = state.nodes.map((node) =>
         node.id === action.nodeId
-          ? { ...node, storage: compactNode(node.storage, strategy) }
+          ? { ...node, storage: compactNode(node.storage, strategy, state.gcGraceSeconds) }
           : node
       );
       const updated = nodes.find((n) => n.id === action.nodeId)!;
@@ -463,7 +515,105 @@ export function clusterReducer(state: Cluster, action: ClusterAction): Cluster {
         ...state,
         nodes,
         events: addEvent(state.events, message),
-        animation: { ...state.animation, writeTargetNodeId: replicaIds[0] ?? null, flushedNodeId: flushed ? replicaIds[0] ?? null : null },
+        animation: { ...state.animation, writeTargetNodeId: replicaIds[0] ?? null, flushedNodeId: flushed ? replicaIds[0] ?? null : null, lastWriteAction: "write" },
+      };
+    }
+
+    case "WRITE_TTL": {
+      const token = hashPartitionKey(action.partitionKey, state.tokenRange);
+      const activeKeyspace = state.keyspaces.find((k) => k.id === state.activeKeyspaceId);
+      const rf = activeKeyspace?.replicationFactor ?? 1;
+      const replicaIds = getReplicaNodeIds(token, rf, state.nodes);
+      if (replicaIds.length === 0) {
+        return {
+          ...state,
+          events: addEvent(state.events, "No replicas available for TTL write"),
+        };
+      }
+      const nodes = state.nodes.map((node) => {
+        if (!replicaIds.includes(node.id)) return node;
+        return {
+          ...node,
+          storage: writeToNode(node.storage, action.partitionKey, action.value, action.ttlSeconds),
+        };
+      });
+      const flushed = nodes.some(
+        (n) =>
+          replicaIds.includes(n.id) &&
+          state.nodes.find((prev) => prev.id === n.id)!.storage.memtable.length >= 4 &&
+          n.storage.memtable.length === 0
+      );
+      const message = flushed
+        ? `Wrote ${action.partitionKey} with TTL ${action.ttlSeconds}s on ${replicaIds.length} replica(s); memtable flushed`
+        : `Wrote ${action.partitionKey} with TTL ${action.ttlSeconds}s on ${replicaIds.length} replica(s)`;
+      return {
+        ...state,
+        nodes,
+        events: addEvent(state.events, message),
+        animation: { ...state.animation, writeTargetNodeId: replicaIds[0] ?? null, flushedNodeId: flushed ? replicaIds[0] ?? null : null, lastWriteAction: "write_ttl" },
+      };
+    }
+
+    case "DELETE": {
+      const token = hashPartitionKey(action.partitionKey, state.tokenRange);
+      const activeKeyspace = state.keyspaces.find((k) => k.id === state.activeKeyspaceId);
+      const rf = activeKeyspace?.replicationFactor ?? 1;
+      const replicaIds = getReplicaNodeIds(token, rf, state.nodes);
+      if (replicaIds.length === 0) {
+        return {
+          ...state,
+          events: addEvent(state.events, "No replicas available for delete"),
+        };
+      }
+      const nodes = state.nodes.map((node) => {
+        if (!replicaIds.includes(node.id)) return node;
+        return {
+          ...node,
+          storage: deleteToNode(node.storage, action.partitionKey),
+        };
+      });
+      const flushed = nodes.some(
+        (n) =>
+          replicaIds.includes(n.id) &&
+          state.nodes.find((prev) => prev.id === n.id)!.storage.memtable.length >= 4 &&
+          n.storage.memtable.length === 0
+      );
+      const message = flushed
+        ? `Deleted ${action.partitionKey} on ${replicaIds.length} replica(s); memtable flushed`
+        : `Deleted ${action.partitionKey} on ${replicaIds.length} replica(s)`;
+      return {
+        ...state,
+        nodes,
+        events: addEvent(state.events, message),
+        animation: { ...state.animation, writeTargetNodeId: replicaIds[0] ?? null, flushedNodeId: flushed ? replicaIds[0] ?? null : null, lastWriteAction: "delete" },
+      };
+    }
+
+    case "TICK_TTL": {
+      const currentTime = now();
+      const expiredKeys: string[] = [];
+      const nodes = state.nodes.map((node) => {
+        const expired = node.storage.memtable.filter(
+          (row) => row.expiresAt !== undefined && row.expiresAt <= currentTime && !row.isTombstone
+        );
+        if (expired.length === 0) return node;
+        expiredKeys.push(...expired.map((row) => row.partitionKey));
+        return { ...node, storage: expireTTLRows(node.storage, currentTime) };
+      });
+      if (expiredKeys.length === 0) return state;
+      const uniqueKeys = Array.from(new Set(expiredKeys)).sort();
+      return {
+        ...state,
+        nodes,
+        events: addEvent(state.events, `TTL expired for ${uniqueKeys.join(", ")}`),
+      };
+    }
+
+    case "SET_GC_GRACE_SECONDS": {
+      return {
+        ...state,
+        gcGraceSeconds: action.seconds,
+        events: addEvent(state.events, `gc_grace_seconds set to ${action.seconds}`),
       };
     }
 
@@ -484,7 +634,7 @@ export function clusterReducer(state: Cluster, action: ClusterAction): Cluster {
     }
 
     case "CLEAR_ANIMATION": {
-      return { ...state, animation: { writeTargetNodeId: null, flushedNodeId: null, joiningNodeId: null, compactedNodeId: null } };
+      return { ...state, animation: { writeTargetNodeId: null, flushedNodeId: null, joiningNodeId: null, compactedNodeId: null, lastWriteAction: null } };
     }
 
     default:

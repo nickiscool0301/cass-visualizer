@@ -1,4 +1,6 @@
+import { useState } from "react";
 import type { Cluster, Node, SSTable } from "../types/cluster";
+import { SSTableInspector } from "./SSTableInspector";
 
 interface CompactionViewProps {
   cluster: Cluster;
@@ -19,17 +21,19 @@ const sizeClasses: Record<SizeTier, string> = {
   large: "bg-violet-50 text-violet-700 border-violet-200",
 };
 
-function SStableBadge({ sstable, isNew }: { sstable: SSTable; isNew: boolean }) {
+function SStableBadge({ sstable, isNew, onClick }: { sstable: SSTable; isNew: boolean; onClick: () => void }) {
   const size = sstableSize(sstable.rows.length);
   return (
-    <div
+    <button
+      type="button"
+      onClick={onClick}
       className={`rounded border px-2 py-1 text-[11px] transition-all ${sizeClasses[size]} ${isNew ? "animate-glow" : ""}`}
     >
       <div className="flex items-center justify-between gap-2">
         <span className="font-mono-data opacity-80">L{sstable.level}</span>
         <span className="font-semibold">{sstable.rows.length} rows</span>
       </div>
-    </div>
+    </button>
   );
 }
 
@@ -38,11 +42,13 @@ function NodeCompactionCard({
   strategy,
   isCompacted,
   onCompact,
+  onInspectSSTable,
 }: {
   node: Node;
   strategy: string;
   isCompacted: boolean;
   onCompact: () => void;
+  onInspectSSTable: (sstable: SSTable) => void;
 }) {
   const byLevel = new Map<number, SSTable[]>();
   for (const sstable of node.storage.sstables) {
@@ -87,6 +93,7 @@ function NodeCompactionCard({
                   key={sstable.id}
                   sstable={sstable}
                   isNew={isCompacted && level === sstables[0]?.level}
+                  onClick={() => onInspectSSTable(sstable)}
                 />
               ))}
             </div>
@@ -105,12 +112,14 @@ export function CompactionView({ cluster, dispatch }: CompactionViewProps) {
   const activeKeyspace = cluster.keyspaces.find((k) => k.id === cluster.activeKeyspaceId);
   const strategy = activeKeyspace?.compactionStrategy ?? "STCS";
   const compactedNodeId = cluster.animation.compactedNodeId;
+  const [inspectedSSTable, setInspectedSSTable] = useState<SSTable | null>(null);
 
   return (
     <div className="space-y-4">
       <p className="max-w-3xl text-[11px] leading-relaxed" style={{ color: "var(--text-secondary)" }}>
         SSTables are immutable sorted files. Over time, many small SSTables accumulate. Compaction merges
-        them into fewer, larger files to reclaim space and improve read performance.
+        them into fewer, larger files to reclaim space and improve read performance. Click any SSTable to
+        inspect its rows.
       </p>
 
       <div className="grid gap-4 sm:grid-cols-2">
@@ -144,9 +153,14 @@ export function CompactionView({ cluster, dispatch }: CompactionViewProps) {
             strategy={strategy}
             isCompacted={compactedNodeId === node.id}
             onCompact={() => dispatch({ type: "COMPACT", nodeId: node.id })}
+            onInspectSSTable={setInspectedSSTable}
           />
         ))}
       </div>
+
+      {inspectedSSTable && (
+        <SSTableInspector sstable={inspectedSSTable} onClose={() => setInspectedSSTable(null)} />
+      )}
     </div>
   );
 }

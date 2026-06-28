@@ -1,9 +1,18 @@
-import type { Cluster, Node } from "../types/cluster";
+import { useState } from "react";
+import type { Cluster, Node, SSTable, StoredRow } from "../types/cluster";
 import type { ClusterAction } from "../state/clusterReducer";
+import { SSTableInspector } from "./SSTableInspector";
 
 interface StorageViewProps {
   cluster: Cluster;
   dispatch: (action: ClusterAction) => void;
+}
+
+function formatTTLCountdown(row: StoredRow): string | null {
+  if (row.isTombstone || row.expiresAt === undefined) return null;
+  const remainingMs = row.expiresAt - Date.now();
+  const remainingSec = Math.max(0, Math.ceil(remainingMs / 1000));
+  return `expires in ${remainingSec}s`;
 }
 
 function NodeStorageCard({
@@ -11,11 +20,13 @@ function NodeStorageCard({
   isWriteTarget,
   isFlushed,
   onFlush,
+  onInspectSSTable,
 }: {
   node: Node;
   isWriteTarget: boolean;
   isFlushed: boolean;
   onFlush: () => void;
+  onInspectSSTable: (sstable: SSTable) => void;
 }) {
   const { commitLog, memtable, sstables } = node.storage;
   return (
@@ -39,7 +50,7 @@ function NodeStorageCard({
           style={{ backgroundColor: "var(--bg-primary)", borderColor: "var(--border)" }}
         >
           {commitLog.slice(0, 5).map((row, i) => (
-            <li key={i} className={`${i === 0 && isWriteTarget ? "animate-slide-in" : ""}`} style={{ color: "var(--text-secondary)" }}>
+            <li key={i} className={`${i === 0 && isWriteTarget ? "animate-slide-in" : ""}`} style={{ color: row.isTombstone ? "#dc2626" : "var(--text-secondary)" }}>
               <span className="font-semibold" style={{ color: "var(--accent)" }}>{row.partitionKey}</span>{" "}
               <span style={{ color: "var(--text-tertiary)" }}>=</span> {row.value}
             </li>
@@ -70,20 +81,28 @@ function NodeStorageCard({
                 </tr>
               </thead>
               <tbody>
-                {memtable.map((row, i) => (
-                  <tr
-                    key={i}
-                    className={`border-t ${i === 0 && isWriteTarget ? "animate-slide-in" : ""}`}
-                    style={{ borderColor: "var(--border-subtle)" }}
-                  >
-                    <td className="py-1 font-semibold" style={{ color: "var(--accent)" }}>
-                      {row.partitionKey}
-                    </td>
-                    <td className="py-1" style={{ color: "var(--text-secondary)" }}>
-                      {row.value}
-                    </td>
-                  </tr>
-                ))}
+                {memtable.map((row, i) => {
+                  const countdown = formatTTLCountdown(row);
+                  return (
+                    <tr
+                      key={i}
+                      className={`border-t ${i === 0 && isWriteTarget ? "animate-slide-in" : ""}`}
+                      style={{ borderColor: "var(--border-subtle)" }}
+                    >
+                      <td className="py-1 font-semibold" style={{ color: "var(--accent)" }}>
+                        {row.partitionKey}
+                      </td>
+                      <td className="py-1" style={{ color: row.isTombstone ? "#dc2626" : "var(--text-secondary)" }}>
+                        {row.value}
+                        {countdown && (
+                          <span className="ml-1.5 rounded px-1 py-0.5" style={{ backgroundColor: "var(--accent-soft)", color: "var(--accent)" }}>
+                            {countdown}
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -106,7 +125,8 @@ function NodeStorageCard({
             {sstables.map((sstable, i) => (
               <li
                 key={sstable.id}
-                className={`rounded border p-1.5 text-[11px] ${i === 0 && isFlushed ? "animate-glow" : ""}`}
+                onClick={() => onInspectSSTable(sstable)}
+                className={`cursor-pointer rounded border p-1.5 text-[11px] ${i === 0 && isFlushed ? "animate-glow" : ""}`}
                 style={{ backgroundColor: "var(--bg-primary)", borderColor: "var(--border)" }}
               >
                 <div className="flex items-center justify-between">
@@ -135,6 +155,7 @@ function NodeStorageCard({
 
 export function StorageView({ cluster, dispatch }: StorageViewProps) {
   const { writeTargetNodeId, flushedNodeId } = cluster.animation;
+  const [inspectedSSTable, setInspectedSSTable] = useState<SSTable | null>(null);
 
   return (
     <div className="space-y-4">
@@ -142,6 +163,7 @@ export function StorageView({ cluster, dispatch }: StorageViewProps) {
         <p className="mt-1 max-w-3xl text-[11px] leading-relaxed" style={{ color: "var(--text-secondary)" }}>
           Each node stores its own commit log, memtable, and SSTables. Writes are routed to the partition's
           replica nodes. Use <strong>Flush Memtable</strong> to force memtable data onto disk as an SSTable.
+          Click an SSTable to inspect its rows.
         </p>
       </div>
 
@@ -153,9 +175,14 @@ export function StorageView({ cluster, dispatch }: StorageViewProps) {
             isWriteTarget={writeTargetNodeId === node.id}
             isFlushed={flushedNodeId === node.id}
             onFlush={() => dispatch({ type: "FLUSH_MEMTABLE", nodeId: node.id })}
+            onInspectSSTable={setInspectedSSTable}
           />
         ))}
       </div>
+
+      {inspectedSSTable && (
+        <SSTableInspector sstable={inspectedSSTable} onClose={() => setInspectedSSTable(null)} />
+      )}
     </div>
   );
 }

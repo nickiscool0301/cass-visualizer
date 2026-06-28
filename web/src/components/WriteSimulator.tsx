@@ -10,6 +10,7 @@ interface WriteSimulatorProps {
 export function WriteSimulator({ cluster, dispatch }: WriteSimulatorProps) {
   const [key, setKey] = useState("");
   const [value, setValue] = useState("");
+  const [ttlSeconds, setTtlSeconds] = useState("");
   const isAnimating = cluster.animation.writeTargetNodeId !== null;
 
   useEffect(() => {
@@ -26,13 +27,41 @@ export function WriteSimulator({ cluster, dispatch }: WriteSimulatorProps) {
     const trimmedKey = key.trim();
     const trimmedValue = value.trim();
     if (!trimmedKey || !trimmedValue) return;
-    dispatch({ type: "WRITE", partitionKey: trimmedKey, value: trimmedValue });
+
+    const ttl = ttlSeconds.trim() === "" ? undefined : Number(ttlSeconds);
+    if (ttl !== undefined && (!Number.isFinite(ttl) || ttl <= 0)) return;
+
+    if (ttl !== undefined) {
+      dispatch({ type: "WRITE_TTL", partitionKey: trimmedKey, value: trimmedValue, ttlSeconds: ttl });
+    } else {
+      dispatch({ type: "WRITE", partitionKey: trimmedKey, value: trimmedValue });
+    }
     setKey("");
     setValue("");
+    setTtlSeconds("");
+  };
+
+  const handleDelete = () => {
+    const trimmedKey = key.trim();
+    if (!trimmedKey) return;
+    dispatch({ type: "DELETE", partitionKey: trimmedKey });
+    setKey("");
+    setValue("");
+    setTtlSeconds("");
+  };
+
+  const handleTickTTL = () => {
+    dispatch({ type: "TICK_TTL" });
   };
 
   const targetNode = cluster.nodes.find((n) => n.id === cluster.animation.writeTargetNodeId);
   const activeKeyspace = cluster.keyspaces.find((k) => k.id === cluster.activeKeyspaceId);
+
+  const actionTypeLabel: Record<string, string> = {
+    write: "Write",
+    write_ttl: "TTL Write",
+    delete: "Delete",
+  };
 
   return (
     <div className="border-b pb-4" style={{ borderColor: "var(--border-subtle)" }}>
@@ -40,7 +69,7 @@ export function WriteSimulator({ cluster, dispatch }: WriteSimulatorProps) {
         Write Simulator
       </h2>
 
-      <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1fr_auto]">
+      <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1fr_auto_auto]">
         <input
           type="text"
           placeholder="Partition key"
@@ -57,21 +86,52 @@ export function WriteSimulator({ cluster, dispatch }: WriteSimulatorProps) {
           disabled={isAnimating}
           className="input min-w-0 disabled:opacity-50"
         />
-        <button
-          onClick={handleWrite}
-          disabled={!key.trim() || !value.trim() || isAnimating}
-          className="btn-ghost disabled:opacity-40"
-        >
-          Write
-        </button>
+        <input
+          type="number"
+          min={1}
+          placeholder="TTL (s)"
+          value={ttlSeconds}
+          onChange={(e) => setTtlSeconds(e.target.value)}
+          disabled={isAnimating}
+          className="input min-w-0 disabled:opacity-50"
+        />
+        <div className="flex gap-2">
+          <button
+            onClick={handleWrite}
+            disabled={!key.trim() || !value.trim() || isAnimating}
+            className="btn-ghost disabled:opacity-40"
+          >
+            Write
+          </button>
+          <button
+            onClick={handleDelete}
+            disabled={!key.trim() || isAnimating}
+            className="btn-ghost disabled:opacity-40"
+          >
+            Delete
+          </button>
+        </div>
       </div>
 
-      <div className="mt-2 text-[11px]" style={{ color: "var(--text-tertiary)" }}>
-        Active keyspace:{" "}
-        <span style={{ color: "var(--text-primary)" }}>
-          {activeKeyspace?.name ?? "none"} (RF={activeKeyspace?.replicationFactor ?? 0})
+      <div className="mt-2 flex items-center justify-between text-[11px]" style={{ color: "var(--text-tertiary)" }}>
+        <span>
+          Active keyspace:{" "}
+          <span style={{ color: "var(--text-primary)" }}>
+            {activeKeyspace?.name ?? "none"} (RF={activeKeyspace?.replicationFactor ?? 0})
+          </span>
+          {targetNode && (
+            <span style={{ color: "var(--accent)" }}>
+              {" "}
+              → {actionTypeLabel[cluster.animation.lastWriteAction ?? "write"]} on {targetNode.name}
+            </span>
+          )}
         </span>
-        {targetNode && <span style={{ color: "var(--accent)" }}> → {targetNode.name}</span>}
+        <button
+          onClick={handleTickTTL}
+          className="btn-ghost py-1 px-2 text-[11px]"
+        >
+          Advance TTL
+        </button>
       </div>
     </div>
   );

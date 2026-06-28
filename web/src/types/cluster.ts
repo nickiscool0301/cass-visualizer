@@ -51,6 +51,7 @@ export interface ClusterAnimation {
   flushedNodeId: string | null;
   joiningNodeId: string | null;
   compactedNodeId: string | null;
+  lastWriteAction: "write" | "write_ttl" | "delete" | null;
 }
 
 export interface Cluster {
@@ -64,6 +65,7 @@ export interface Cluster {
   activeKeyspaceId: string | null;
   activeTab: "topology" | "storage" | "compaction" | "knowledge";
   animation: ClusterAnimation;
+  gcGraceSeconds: number;
 }
 
 export interface TokenRange {
