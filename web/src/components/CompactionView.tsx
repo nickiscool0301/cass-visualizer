@@ -14,21 +14,19 @@ function sstableSize(rows: number): SizeTier {
 }
 
 const sizeClasses: Record<SizeTier, string> = {
-  small: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
-  medium: "bg-sky-500/15 text-sky-400 border-sky-500/30",
-  large: "bg-violet-500/15 text-violet-400 border-violet-500/30",
+  small: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  medium: "bg-sky-50 text-sky-700 border-sky-200",
+  large: "bg-violet-50 text-violet-700 border-violet-200",
 };
 
 function SStableBadge({ sstable, isNew }: { sstable: SSTable; isNew: boolean }) {
   const size = sstableSize(sstable.rows.length);
   return (
     <div
-      className={`rounded-lg border px-3 py-2 text-xs transition-all ${sizeClasses[size]} ${
-        isNew ? "animate-glow" : ""
-      }`}
+      className={`rounded border px-2 py-1 text-[11px] transition-all ${sizeClasses[size]} ${isNew ? "animate-glow" : ""}`}
     >
-      <div className="flex items-center justify-between gap-3">
-        <span className="font-mono opacity-80">L{sstable.level}</span>
+      <div className="flex items-center justify-between gap-2">
+        <span className="font-mono-data opacity-80">L{sstable.level}</span>
         <span className="font-semibold">{sstable.rows.length} rows</span>
       </div>
     </div>
@@ -56,41 +54,48 @@ function NodeCompactionCard({
   const hasSstables = node.storage.sstables.length > 0;
 
   return (
-    <div className={`panel p-5 transition-all duration-300 ${isCompacted ? "animate-glow" : ""}`}>
+    <div
+      className={`border-b pb-4 transition-all duration-300 ${isCompacted ? "animate-glow" : ""}`}
+      style={{ borderColor: "var(--border-subtle)" }}
+    >
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <span className="inline-block h-3 w-3 rounded-full" style={{ backgroundColor: node.color }} />
-          <h3 className="font-semibold text-slate-50">{node.name}</h3>
+          <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: node.color }} />
+          <h3 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
+            {node.name}
+          </h3>
         </div>
         <button
           onClick={onCompact}
           disabled={!hasSstables}
-          className="btn-secondary text-xs disabled:cursor-not-allowed disabled:opacity-50"
+          className="btn-ghost py-1.5 text-[11px] disabled:opacity-50"
         >
           Compact
         </button>
       </div>
 
-      <div className="mt-4 space-y-4">
-        {levels.length === 0 && (
-          <p className="text-sm text-slate-500">No SSTables yet. Write some data in Storage Engine first.</p>
-        )}
+      <div className="mt-3 space-y-3">
+        {levels.length === 0 && <p className="text-[11px]" style={{ color: "var(--text-secondary)" }}>No SSTables yet. Write data in Storage, then flush.</p>}
         {levels.map(([level, sstables]) => (
           <div key={level}>
-            <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            <h4 className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: "var(--text-tertiary)" }}>
               Level {level}
             </h4>
-            <div className="mt-2 flex flex-wrap gap-2">
+            <div className="mt-1 flex flex-wrap gap-1.5">
               {sstables.map((sstable) => (
-                <SStableBadge key={sstable.id} sstable={sstable} isNew={isCompacted && level === sstables[0]?.level} />
+                <SStableBadge
+                  key={sstable.id}
+                  sstable={sstable}
+                  isNew={isCompacted && level === sstables[0]?.level}
+                />
               ))}
             </div>
           </div>
         ))}
       </div>
 
-      <div className="mt-4 text-xs text-slate-500">
-        Strategy: <span className="text-slate-300">{strategy}</span>
+      <div className="mt-3 text-[11px]" style={{ color: "var(--text-secondary)" }}>
+        Strategy: <span style={{ color: "var(--text-primary)" }}>{strategy}</span>
       </div>
     </div>
   );
@@ -102,37 +107,36 @@ export function CompactionView({ cluster, dispatch }: CompactionViewProps) {
   const compactedNodeId = cluster.animation.compactedNodeId;
 
   return (
-    <div className="space-y-5">
-      <div>
-        <h2 className="text-xl font-semibold text-slate-50">Compaction</h2>
-        <p className="mt-1 text-sm leading-relaxed text-slate-400">
-          SSTables are immutable sorted files. Over time, many small SSTables accumulate. Compaction
-          merges them into fewer, larger files to reclaim space and improve read performance.
-        </p>
+    <div className="space-y-4">
+      <p className="max-w-3xl text-[11px] leading-relaxed" style={{ color: "var(--text-secondary)" }}>
+        SSTables are immutable sorted files. Over time, many small SSTables accumulate. Compaction merges
+        them into fewer, larger files to reclaim space and improve read performance.
+      </p>
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="rounded border p-3" style={{ borderColor: "var(--border-subtle)" }}>
+          <h3 className="text-xs font-semibold" style={{ color: "var(--text-primary)" }}>How to test compaction</h3>
+          <ol className="mt-1 list-decimal space-y-0.5 pl-3 text-[11px]" style={{ color: "var(--text-secondary)" }}>
+            <li>Go to the <strong>Storage</strong> tab.</li>
+            <li>Write rows with the Write Simulator.</li>
+            <li>Flush memtables manually, or let them auto-flush after 5 rows.</li>
+            <li>Return here and click <strong>Compact</strong> on a node.</li>
+          </ol>
+        </div>
+
+        <div className="rounded border p-3" style={{ borderColor: "var(--border-subtle)" }}>
+          <h3 className="text-xs font-semibold" style={{ color: "var(--text-primary)" }}>
+            {strategy === "STCS" ? "Size-Tiered Compaction (STCS)" : "Leveled Compaction (LCS)"}
+          </h3>
+          <p className="mt-1 text-[11px] leading-relaxed" style={{ color: "var(--text-secondary)" }}>
+            {strategy === "STCS"
+              ? "When 4 SSTables in the same size tier exist, they merge into one larger SSTable at the next tier."
+              : "Level 0 holds freshly flushed SSTables (limit 4). Each higher level allows 2 SSTables; when exceeded, all SSTables in that level merge and move up."}
+          </p>
+        </div>
       </div>
 
-      <div className="panel p-5">
-        <h3 className="text-sm font-semibold text-slate-200">How to test compaction</h3>
-        <ol className="mt-2 list-decimal space-y-1 pl-4 text-sm text-slate-400">
-          <li>Go to the <strong>Storage Engine</strong> tab.</li>
-          <li>Write several rows (e.g., 20+) using the Write Simulator.</li>
-          <li>Watch memtables flush into SSTables automatically.</li>
-          <li>Return here and click <strong>Compact</strong> on a node with SSTables.</li>
-        </ol>
-      </div>
-
-      <div className="panel p-5">
-        <h3 className="text-sm font-semibold text-slate-200">
-          {strategy === "STCS" ? "Size-Tiered Compaction (STCS)" : "Leveled Compaction (LCS)"}
-        </h3>
-        <p className="mt-2 text-sm text-slate-400">
-          {strategy === "STCS"
-            ? "When 4 SSTables in the same size tier exist, they merge into one larger SSTable at the next tier."
-            : "Level 0 holds freshly flushed SSTables (limit 4). Each higher level allows 2 SSTables; when exceeded, all SSTables in that level merge and move up."}
-        </p>
-      </div>
-
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
         {cluster.nodes.map((node) => (
           <NodeCompactionCard
             key={node.id}
