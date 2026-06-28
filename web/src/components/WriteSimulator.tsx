@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Cluster } from "../types/cluster";
 import type { ClusterAction } from "../state/clusterReducer";
 
@@ -11,6 +11,16 @@ export function WriteSimulator({ cluster, dispatch }: WriteSimulatorProps) {
   const [key, setKey] = useState("");
   const [value, setValue] = useState("");
   const isAnimating = cluster.animation.writeTargetNodeId !== null;
+
+  useEffect(() => {
+    if (cluster.animation.writeTargetNodeId === null) return;
+
+    const timeoutId = setTimeout(() => {
+      dispatch({ type: "CLEAR_ANIMATION" });
+    }, 1600);
+
+    return () => clearTimeout(timeoutId);
+  }, [cluster.animation.writeTargetNodeId, dispatch]);
 
   const handleWrite = () => {
     const trimmedKey = key.trim();
