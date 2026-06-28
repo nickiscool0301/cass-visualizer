@@ -101,17 +101,6 @@ body {
   }
 }
 
-@keyframes packet-travel {
-  0% {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-  100% {
-    opacity: 0;
-    transform: translateY(80px) scale(0.6);
-  }
-}
-
 .animate-pulse-ring {
   animation: pulse-ring 2s ease-in-out infinite;
 }
@@ -124,6 +113,4 @@ body {
   animation: slide-in 0.3s ease-out;
 }
 
-.animate-packet {
-  animation: packet-travel 0.8s ease-in forwards;
-}
+
