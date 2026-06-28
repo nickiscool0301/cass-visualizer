@@ -16,55 +16,58 @@ function NodeStorageCard({
   const { commitLog, memtable, sstables } = node.storage;
   return (
     <div
-      className={`rounded-lg bg-slate-800 p-4 transition-all duration-300 ${
+      className={`panel p-5 transition-all duration-300 ${
         isWriteTarget || isFlushed ? "animate-glow" : ""
       }`}
     >
-      <h3 className="font-semibold" style={{ color: node.color }}>
-        {node.name}
-      </h3>
+      <div className="flex items-center gap-2">
+        <span className="inline-block h-3 w-3 rounded-full" style={{ backgroundColor: node.color }} />
+        <h3 className="font-semibold text-slate-50">{node.name}</h3>
+      </div>
 
-      <div className="mt-2">
-        <h4 className="text-xs font-medium uppercase text-slate-400">
+      <div className="mt-4">
+        <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
           Commit Log ({commitLog.length})
         </h4>
-        <ul className="mt-1 max-h-24 overflow-y-auto text-xs">
+        <ul className="mt-2 max-h-24 space-y-1 overflow-y-auto rounded-lg bg-slate-800/50 p-2 text-xs">
           {commitLog.slice(0, 5).map((row, i) => (
             <li
               key={i}
               className={`text-slate-300 ${i === 0 && isWriteTarget ? "animate-slide-in" : ""}`}
             >
-              {row.partitionKey} = {row.value}
+              <span className="text-sky-400">{row.partitionKey}</span>{" "}
+              <span className="text-slate-500">=</span> {row.value}
             </li>
           ))}
+          {commitLog.length === 0 && <li className="text-slate-600">Empty</li>}
           {commitLog.length > 5 && (
             <li className="text-slate-500">...and {commitLog.length - 5} more</li>
           )}
         </ul>
       </div>
 
-      <div className="mt-3">
-        <h4 className="text-xs font-medium uppercase text-slate-400">
+      <div className="mt-4">
+        <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
           Memtable ({memtable.length})
         </h4>
         {memtable.length === 0 ? (
-          <p className="text-xs text-slate-500">Empty</p>
+          <p className="mt-2 rounded-lg bg-slate-800/50 p-2 text-xs text-slate-600">Empty</p>
         ) : (
-          <table className="mt-1 w-full text-xs">
+          <table className="mt-2 w-full text-xs">
             <thead>
-              <tr className="text-left text-slate-400">
-                <th className="pb-1">Key</th>
-                <th className="pb-1">Value</th>
+              <tr className="text-left text-slate-500">
+                <th className="pb-2 font-medium">Key</th>
+                <th className="pb-2 font-medium">Value</th>
               </tr>
             </thead>
             <tbody>
               {memtable.map((row, i) => (
                 <tr
                   key={i}
-                  className={`border-t border-slate-700 ${i === 0 && isWriteTarget ? "animate-slide-in" : ""}`}
+                  className={`border-t border-slate-700/50 ${i === 0 && isWriteTarget ? "animate-slide-in" : ""}`}
                 >
-                  <td className="py-1 text-slate-300">{row.partitionKey}</td>
-                  <td className="py-1 text-slate-300">{row.value}</td>
+                  <td className="py-2 text-sky-400">{row.partitionKey}</td>
+                  <td className="py-2 text-slate-300">{row.value}</td>
                 </tr>
               ))}
             </tbody>
@@ -72,19 +75,23 @@ function NodeStorageCard({
         )}
       </div>
 
-      <div className="mt-3">
-        <h4 className="text-xs font-medium uppercase text-slate-400">SSTables ({sstables.length})</h4>
+      <div className="mt-4">
+        <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+          SSTables ({sstables.length})
+        </h4>
         {sstables.length === 0 ? (
-          <p className="text-xs text-slate-500">None</p>
+          <p className="mt-2 rounded-lg bg-slate-800/50 p-2 text-xs text-slate-600">None</p>
         ) : (
-          <ul className="mt-1 space-y-2">
+          <ul className="mt-2 space-y-2">
             {sstables.map((sstable, i) => (
               <li
                 key={sstable.id}
-                className={`rounded bg-slate-700 p-2 text-xs ${i === 0 && isFlushed ? "animate-glow" : ""}`}
+                className={`rounded-lg bg-slate-800/50 p-3 text-xs ${i === 0 && isFlushed ? "animate-glow" : ""}`}
               >
-                <div className="text-slate-400">{sstable.id}</div>
-                <div className="text-slate-300">{sstable.rows.length} rows</div>
+                <div className="flex items-center justify-between">
+                  <span className="font-mono text-slate-400">{sstable.id}</span>
+                  <span className="text-slate-500">{sstable.rows.length} rows</span>
+                </div>
               </li>
             ))}
           </ul>
@@ -100,11 +107,13 @@ export function StorageView({ cluster }: StorageViewProps) {
 
   return (
     <div className="space-y-4">
-      <h2 className="text-lg font-semibold">Storage Engine</h2>
-      <p className="text-sm text-slate-400">
-        Each node stores its own commit log, memtable, and SSTables. Writes are routed to the
-        partition's replica nodes.
-      </p>
+      <div>
+        <h2 className="text-xl font-semibold text-slate-50">Storage Engine</h2>
+        <p className="mt-1 text-sm text-slate-400">
+          Each node stores its own commit log, memtable, and SSTables. Writes are routed to the
+          partition's replica nodes.
+        </p>
+      </div>
 
       {selectedNode ? (
         <NodeStorageCard

@@ -8,6 +8,17 @@ describe("clusterReducer", () => {
     const next = clusterReducer(initial, { type: "ADD_NODE" });
     expect(next.nodes).toHaveLength(initial.nodes.length + 1);
     expect(next.events[0].message).toMatch(/added/);
+    expect(next.animation.joiningNodeId).toBeDefined();
+  });
+
+  it("splits the largest range when adding a node", () => {
+    const next = clusterReducer(initial, { type: "ADD_NODE" });
+    const newNode = next.nodes[next.nodes.length - 1];
+    expect(newNode.tokens.length).toBe(1);
+    expect(newNode.tokens[0]).toBeGreaterThanOrEqual(0);
+    expect(newNode.tokens[0]).toBeLessThanOrEqual(999);
+    const event = next.events[0].message;
+    expect(event).toMatch(/streaming data from/);
   });
 
   it("removes a node", () => {

@@ -6,15 +6,15 @@ interface EventLogProps {
 
 export function EventLog({ events }: EventLogProps) {
   return (
-    <div className="rounded-lg bg-slate-800 p-4">
-      <h2 className="text-lg font-semibold">Event Log</h2>
-      <ul className="mt-2 max-h-48 space-y-1 overflow-y-auto text-sm">
+    <div className="panel p-5">
+      <h2 className="text-lg font-semibold text-slate-50">Event Log</h2>
+      <ul className="mt-4 max-h-52 space-y-2 overflow-y-auto text-sm">
         {events.map((event) => (
-          <li key={event.id} className="text-slate-300">
-            <span className="text-xs text-slate-500">
+          <li key={event.id} className="flex gap-3 text-slate-300">
+            <span className="shrink-0 text-xs text-slate-500">
               {new Date(event.timestamp).toLocaleTimeString()}
-            </span>{" "}
-            {event.message}
+            </span>
+            <span className="text-sm">{event.message}</span>
           </li>
         ))}
       </ul>

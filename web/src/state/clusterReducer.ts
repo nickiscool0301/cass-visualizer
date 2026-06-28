@@ -7,7 +7,7 @@ import type {
   SSTable,
   StoredRow,
 } from "../types/cluster";
-import { getReplicaNodeIds } from "../lib/replicaPlacement";
+import { getAllTokenPoints, getReplicaNodeIds } from "../lib/replicaPlacement";
 
 const palette = [
   "#ef4444", // red-500
@@ -69,6 +69,46 @@ function allocateColor(nodes: Node[]): string {
 
 function createEmptyStorage(): NodeStorage {
   return { commitLog: [], memtable: [], sstables: [] };
+}
+
+function rangeSize(start: number, end: number, tokenRange: [number, number]): number {
+  const span = tokenRange[1] - tokenRange[0] + 1;
+  let size = end - start + 1;
+  if (size <= 0) size += span;
+  return size;
+}
+
+function splitLargestRange(
+  nodes: Node[],
+  tokenRange: [number, number]
+): { ownerId: string; newToken: number } | null {
+  if (nodes.length === 0) return null;
+  const sorted = getAllTokenPoints(nodes);
+  if (sorted.length === 0) return null;
+
+  let largestStart = sorted[sorted.length - 1].token;
+  let largestEnd = sorted[0].token;
+  let largestSize = rangeSize(largestStart, largestEnd, tokenRange);
+  let largestOwner = sorted[0].nodeId;
+
+  for (let i = 0; i < sorted.length; i++) {
+    const current = sorted[i];
+    const next = sorted[(i + 1) % sorted.length];
+    const start = current.token;
+    const end = next.token;
+    const size = rangeSize(start, end, tokenRange);
+    if (size > largestSize) {
+      largestSize = size;
+      largestStart = start;
+      largestEnd = end;
+      largestOwner = next.nodeId;
+    }
+  }
+
+  const span = tokenRange[1] - tokenRange[0] + 1;
+  let mid = largestStart + Math.floor(largestSize / 2);
+  if (mid > tokenRange[1]) mid -= span;
+  return { ownerId: largestOwner, newToken: mid };
 }
 
 function hashPartitionKey(key: string, tokenRange: [number, number]): number {
@@ -143,7 +183,7 @@ export function createInitialCluster(): Cluster {
     selectedNodeId: null,
     activeKeyspaceId: keyspace.id,
     activeTab: "topology",
-    animation: { writeTargetNodeId: null, flushedNodeId: null },
+    animation: { writeTargetNodeId: null, flushedNodeId: null, joiningNodeId: null },
   };
 }
 
@@ -164,8 +204,8 @@ export type ClusterAction =
 export function clusterReducer(state: Cluster, action: ClusterAction): Cluster {
   switch (action.type) {
     case "ADD_NODE": {
-      const newTokens = distributeTokensEvenly(state.nodes.length + 1, state.tokenRange)
-        .pop() ?? [Math.floor(Math.random() * 1000)];
+      const split = splitLargestRange(state.nodes, state.tokenRange);
+      const newTokens = split ? [split.newToken] : [Math.floor(Math.random() * 1000)];
       const newNode: Node = {
         id: generateId("node"),
         name: nextNodeName(state.nodes),
@@ -177,7 +217,14 @@ export function clusterReducer(state: Cluster, action: ClusterAction): Cluster {
       return {
         ...state,
         nodes: [...state.nodes, newNode],
-        events: addEvent(state.events, `Node ${newNode.name} added`),
+        selectedNodeId: newNode.id,
+        events: addEvent(
+          state.events,
+          split
+            ? `Node ${newNode.name} added; streaming data from ${state.nodes.find((n) => n.id === split.ownerId)?.name ?? "owner"}`
+            : `Node ${newNode.name} added`
+        ),
+        animation: { ...state.animation, joiningNodeId: newNode.id },
       };
     }
 
@@ -317,7 +364,7 @@ export function clusterReducer(state: Cluster, action: ClusterAction): Cluster {
     }
 
     case "CLEAR_ANIMATION": {
-      return { ...state, animation: { writeTargetNodeId: null, flushedNodeId: null } };
+      return { ...state, animation: { writeTargetNodeId: null, flushedNodeId: null, joiningNodeId: null } };
     }
 
     default:

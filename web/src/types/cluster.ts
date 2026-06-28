@@ -43,6 +43,7 @@ export interface ClusterEvent {
 export interface ClusterAnimation {
   writeTargetNodeId: string | null;
   flushedNodeId: string | null;
+  joiningNodeId: string | null;
 }
 
 export interface Cluster {

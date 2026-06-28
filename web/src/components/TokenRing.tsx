@@ -45,6 +45,7 @@ export function TokenRing({ cluster, onSelectNode, highlightedNodeId }: TokenRin
       <g transform={`translate(${dims.centerX}, ${dims.centerY})`}>
         {arcs.map((arc, i) => {
           const isHighlighted = highlightedNodeId === arc.nodeId || hoveredNodeId === arc.nodeId;
+          const isJoining = cluster.animation.joiningNodeId === arc.nodeId;
           const opacity = (highlightedNodeId || hoveredNodeId) && !isHighlighted ? 0.3 : 1;
           const ownerName = cluster.nodes.find((n) => n.id === arc.nodeId)?.name ?? arc.nodeId;
           const midpoint = arc.startToken;
@@ -67,7 +68,7 @@ export function TokenRing({ cluster, onSelectNode, highlightedNodeId }: TokenRin
               strokeWidth={2}
               className={`cursor-pointer transition-all duration-500 ease-in-out hover:opacity-80 ${
                 isHighlighted ? "animate-pulse-ring" : ""
-              }`}
+              } ${isJoining ? "animate-glow" : ""}`}
               onClick={() => onSelectNode(arc.nodeId)}
               onMouseEnter={() => setHoveredNodeId(arc.nodeId)}
               onMouseLeave={() => setHoveredNodeId(null)}

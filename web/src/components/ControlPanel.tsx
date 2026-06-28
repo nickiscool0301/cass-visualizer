@@ -16,30 +16,32 @@ export function ControlPanel({ cluster, dispatch }: ControlPanelProps) {
   const trimmedName = newKeyspaceName.trim();
   const duplicateName = trimmedName !== "" && cluster.keyspaces.some((k) => k.name === trimmedName);
   const newRfExceedsNodes = newKeyspaceRf > cluster.nodes.length;
-  const activeRfExceedsNodes = activeKeyspace ? activeKeyspace.replicationFactor > cluster.nodes.length : false;
+  const activeRfExceedsNodes = activeKeyspace
+    ? activeKeyspace.replicationFactor > cluster.nodes.length
+    : false;
 
   return (
-    <div className="space-y-4 rounded-lg bg-slate-800 p-4">
-      <h2 className="text-lg font-semibold">Controls</h2>
+    <div className="panel p-5">
+      <h2 className="text-lg font-semibold text-slate-50">Controls</h2>
 
-      <div className="flex flex-wrap gap-2">
+      <div className="mt-4 flex flex-wrap gap-2">
         <button
           onClick={() => dispatch({ type: "ADD_NODE" })}
-          className="rounded bg-blue-600 px-3 py-1 text-sm hover:bg-blue-500"
+          className="btn-primary"
         >
           Add Node
         </button>
         <button
           onClick={() => dispatch({ type: "REBALANCE_TOKENS" })}
-          className="rounded bg-emerald-600 px-3 py-1 text-sm hover:bg-emerald-500"
+          className="btn-secondary"
         >
-          Rebalance Tokens
+          Rebalance
         </button>
         <button
           onClick={() => dispatch({ type: "RESET_CLUSTER" })}
-          className="rounded bg-slate-600 px-3 py-1 text-sm hover:bg-slate-500"
+          className="btn-secondary"
         >
-          Reset Cluster
+          Reset
         </button>
         <button
           onClick={() => {
@@ -48,18 +50,18 @@ export function ControlPanel({ cluster, dispatch }: ControlPanelProps) {
             }
           }}
           disabled={!cluster.selectedNodeId || cluster.nodes.length <= 1}
-          className="rounded bg-red-600 px-3 py-1 text-sm hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-50"
+          className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          Remove Selected Node
+          Remove
         </button>
       </div>
 
-      <div>
+      <div className="mt-5">
         <h3 className="mb-2 text-sm font-medium text-slate-300">Active Keyspace</h3>
         <select
           value={cluster.activeKeyspaceId ?? ""}
           onChange={(e) => dispatch({ type: "SET_ACTIVE_KEYSPACE", keyspaceId: e.target.value })}
-          className="w-full rounded bg-slate-700 px-2 py-1 text-sm"
+          className="input w-full"
         >
           {cluster.keyspaces.map((ks) => (
             <option key={ks.id} value={ks.id}>
@@ -70,9 +72,9 @@ export function ControlPanel({ cluster, dispatch }: ControlPanelProps) {
       </div>
 
       {activeKeyspace && (
-        <div>
-          <label className="mb-1 block text-sm text-slate-300">
-            Replication Factor (max {cluster.nodes.length})
+        <div className="mt-5">
+          <label className="mb-2 block text-sm font-medium text-slate-300">
+            Replication Factor <span className="text-slate-500">(max {cluster.nodes.length})</span>
           </label>
           <input
             type="range"
@@ -86,9 +88,11 @@ export function ControlPanel({ cluster, dispatch }: ControlPanelProps) {
                 replicationFactor: Number(e.target.value),
               })
             }
-            className="w-full"
+            className="w-full accent-sky-400"
           />
-          <div className="text-right text-sm">{activeKeyspace.replicationFactor}</div>
+          <div className="mt-1 text-right text-sm font-medium text-sky-400">
+            {activeKeyspace.replicationFactor}
+          </div>
           {activeRfExceedsNodes && (
             <p className="mt-1 text-xs text-amber-400">
               Warning: RF exceeds the current node count ({cluster.nodes.length}).
@@ -97,7 +101,7 @@ export function ControlPanel({ cluster, dispatch }: ControlPanelProps) {
         </div>
       )}
 
-      <div>
+      <div className="mt-5">
         <h3 className="mb-2 text-sm font-medium text-slate-300">New Keyspace</h3>
         <div className="flex gap-2">
           <input
@@ -105,7 +109,7 @@ export function ControlPanel({ cluster, dispatch }: ControlPanelProps) {
             placeholder="name"
             value={newKeyspaceName}
             onChange={(e) => setNewKeyspaceName(e.target.value)}
-            className="flex-1 rounded bg-slate-700 px-2 py-1 text-sm"
+            className="input flex-1"
           />
           <input
             type="number"
@@ -113,7 +117,7 @@ export function ControlPanel({ cluster, dispatch }: ControlPanelProps) {
             max={cluster.nodes.length}
             value={newKeyspaceRf}
             onChange={(e) => setNewKeyspaceRf(Number(e.target.value))}
-            className="w-16 rounded bg-slate-700 px-2 py-1 text-sm"
+            className="input w-16"
           />
           <button
             onClick={() => {
@@ -126,16 +130,16 @@ export function ControlPanel({ cluster, dispatch }: ControlPanelProps) {
               setNewKeyspaceName("");
               setNewKeyspaceRf(1);
             }}
-            className="rounded bg-blue-600 px-3 py-1 text-sm hover:bg-blue-500"
+            className="btn-primary"
           >
             Add
           </button>
         </div>
         {duplicateName && (
-          <p className="mt-1 text-xs text-amber-400">Warning: keyspace name already exists.</p>
+          <p className="mt-2 text-xs text-amber-400">Warning: keyspace name already exists.</p>
         )}
         {newRfExceedsNodes && (
-          <p className="mt-1 text-xs text-amber-400">
+          <p className="mt-2 text-xs text-amber-400">
             Warning: RF exceeds the current node count ({cluster.nodes.length}).
           </p>
         )}

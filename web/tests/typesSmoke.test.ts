@@ -27,7 +27,7 @@ describe("type smoke test", () => {
       selectedNodeId: null,
       activeKeyspaceId: "ks1",
       activeTab: "topology",
-      animation: { writeTargetNodeId: null, flushedNodeId: null },
+      animation: { writeTargetNodeId: null, flushedNodeId: null, joiningNodeId: null },
     };
     expect(cluster.nodes).toHaveLength(1);
   });

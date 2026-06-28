@@ -34,22 +34,23 @@ export function WriteSimulator({ cluster, dispatch }: WriteSimulatorProps) {
   };
 
   const targetNode = cluster.nodes.find((n) => n.id === cluster.animation.writeTargetNodeId);
+  const activeKeyspace = cluster.keyspaces.find((k) => k.id === cluster.activeKeyspaceId);
 
   return (
-    <div className="relative overflow-hidden rounded-lg bg-slate-800 p-4">
-      <h2 className="text-lg font-semibold">Write Simulator</h2>
+    <div className="panel relative overflow-hidden p-5">
+      <h2 className="text-lg font-semibold text-slate-50">Write Simulator</h2>
       <p className="mt-1 text-sm text-slate-400">
         Issue a write and watch it flow to the commit log, memtable, and SSTables.
       </p>
 
-      <div className="relative mt-3 flex flex-col gap-2 sm:flex-row">
+      <div className="relative mt-4 flex flex-col gap-2 sm:flex-row">
         <input
           type="text"
           placeholder="Partition key"
           value={key}
           onChange={(e) => setKey(e.target.value)}
           disabled={isAnimating}
-          className="flex-1 rounded bg-slate-700 px-3 py-2 text-sm disabled:opacity-50"
+          className="input flex-1 disabled:opacity-50"
         />
         <input
           type="text"
@@ -57,26 +58,27 @@ export function WriteSimulator({ cluster, dispatch }: WriteSimulatorProps) {
           value={value}
           onChange={(e) => setValue(e.target.value)}
           disabled={isAnimating}
-          className="flex-1 rounded bg-slate-700 px-3 py-2 text-sm disabled:opacity-50"
+          className="input flex-1 disabled:opacity-50"
         />
         <button
           onClick={handleWrite}
           disabled={!key.trim() || !value.trim() || isAnimating}
-          className="rounded bg-blue-600 px-4 py-2 text-sm hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
+          className="btn-primary"
         >
           Write
         </button>
         {showPacket && (
-          <div className="animate-packet absolute right-8 top-1/2 h-3 w-3 rounded-full bg-blue-400 shadow-lg" />
+          <div className="animate-packet absolute right-8 top-1/2 h-3 w-3 rounded-full bg-sky-400 shadow-lg shadow-sky-400/50" />
         )}
       </div>
 
       <div className="mt-3 text-xs text-slate-400">
         Active keyspace:{" "}
-        {cluster.keyspaces.find((k) => k.id === cluster.activeKeyspaceId)?.name ?? "none"} (RF=
-        {cluster.keyspaces.find((k) => k.id === cluster.activeKeyspaceId)?.replicationFactor ?? 0})
+        <span className="text-slate-200">
+          {activeKeyspace?.name ?? "none"} (RF={activeKeyspace?.replicationFactor ?? 0})
+        </span>
         {targetNode && (
-          <span className="ml-2 text-blue-400">→ {targetNode.name}</span>
+          <span className="ml-2 font-medium text-sky-400">→ {targetNode.name}</span>
         )}
       </div>
     </div>
