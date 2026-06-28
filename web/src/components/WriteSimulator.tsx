@@ -43,14 +43,14 @@ export function WriteSimulator({ cluster, dispatch }: WriteSimulatorProps) {
         Issue a write and watch it flow to the commit log, memtable, and SSTables.
       </p>
 
-      <div className="relative mt-4 flex flex-col gap-2 sm:flex-row">
+      <div className="relative mt-4 grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1fr_auto]">
         <input
           type="text"
           placeholder="Partition key"
           value={key}
           onChange={(e) => setKey(e.target.value)}
           disabled={isAnimating}
-          className="input flex-1 disabled:opacity-50"
+          className="input min-w-0 disabled:opacity-50"
         />
         <input
           type="text"
@@ -58,7 +58,7 @@ export function WriteSimulator({ cluster, dispatch }: WriteSimulatorProps) {
           value={value}
           onChange={(e) => setValue(e.target.value)}
           disabled={isAnimating}
-          className="input flex-1 disabled:opacity-50"
+          className="input min-w-0 disabled:opacity-50"
         />
         <button
           onClick={handleWrite}
