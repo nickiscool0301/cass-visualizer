@@ -28,10 +28,13 @@ export interface Node {
   storage: NodeStorage;
 }
 
+export type CompactionStrategy = "STCS" | "LCS";
+
 export interface Keyspace {
   id: string;
   name: string;
   replicationFactor: number;
+  compactionStrategy: CompactionStrategy;
 }
 
 export interface ClusterEvent {
@@ -55,7 +58,7 @@ export interface Cluster {
   events: ClusterEvent[];
   selectedNodeId: string | null;
   activeKeyspaceId: string | null;
-  activeTab: "topology" | "storage";
+  activeTab: "topology" | "storage" | "compaction";
   animation: ClusterAnimation;
 }
 

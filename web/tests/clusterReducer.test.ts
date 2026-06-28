@@ -116,4 +116,26 @@ describe("clusterReducer", () => {
     expect(updated.storage.sstables).toHaveLength(1);
     expect(updated.storage.memtable).toHaveLength(0);
   });
+
+  it("compacts SSTables with STCS", () => {
+    let state = initial;
+    for (let i = 0; i < 20; i++) {
+      state = clusterReducer(state, { type: "WRITE", partitionKey: `k${i}`, value: `v${i}` });
+    }
+    const target = state.nodes.find((n) => n.storage.sstables.length >= 4)!;
+    const beforeCount = target.storage.sstables.length;
+    const compacted = clusterReducer(state, { type: "COMPACT", nodeId: target.id });
+    const updated = compacted.nodes.find((n) => n.id === target.id)!;
+    expect(updated.storage.sstables.length).toBeLessThan(beforeCount);
+  });
+
+  it("sets compaction strategy", () => {
+    const ks = initial.keyspaces[0];
+    const next = clusterReducer(initial, {
+      type: "SET_COMPACTION_STRATEGY",
+      keyspaceId: ks.id,
+      strategy: "LCS",
+    });
+    expect(next.keyspaces[0].compactionStrategy).toBe("LCS");
+  });
 });

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { Cluster } from "../types/cluster";
+import type { Cluster, CompactionStrategy } from "../types/cluster";
 import type { ClusterAction } from "../state/clusterReducer";
 
 interface ControlPanelProps {
@@ -10,6 +10,7 @@ interface ControlPanelProps {
 export function ControlPanel({ cluster, dispatch }: ControlPanelProps) {
   const [newKeyspaceName, setNewKeyspaceName] = useState("");
   const [newKeyspaceRf, setNewKeyspaceRf] = useState(1);
+  const [newCompactionStrategy, setNewCompactionStrategy] = useState<CompactionStrategy>("STCS");
 
   const activeKeyspace = cluster.keyspaces.find((k) => k.id === cluster.activeKeyspaceId);
 
@@ -98,12 +99,30 @@ export function ControlPanel({ cluster, dispatch }: ControlPanelProps) {
               Warning: RF exceeds the current node count ({cluster.nodes.length}).
             </p>
           )}
+
+          <div className="mt-4">
+            <label className="mb-2 block text-sm font-medium text-slate-300">Compaction Strategy</label>
+            <select
+              value={activeKeyspace.compactionStrategy}
+              onChange={(e) =>
+                dispatch({
+                  type: "SET_COMPACTION_STRATEGY",
+                  keyspaceId: activeKeyspace.id,
+                  strategy: e.target.value as CompactionStrategy,
+                })
+              }
+              className="input w-full"
+            >
+              <option value="STCS">Size-Tiered (STCS)</option>
+              <option value="LCS">Leveled (LCS)</option>
+            </select>
+          </div>
         </div>
       )}
 
       <div className="mt-5">
         <h3 className="mb-2 text-sm font-medium text-slate-300">New Keyspace</h3>
-        <div className="flex gap-2">
+        <div className="flex flex-col gap-2 sm:flex-row">
           <input
             type="text"
             placeholder="name"
@@ -119,6 +138,14 @@ export function ControlPanel({ cluster, dispatch }: ControlPanelProps) {
             onChange={(e) => setNewKeyspaceRf(Number(e.target.value))}
             className="input w-16"
           />
+          <select
+            value={newCompactionStrategy}
+            onChange={(e) => setNewCompactionStrategy(e.target.value as CompactionStrategy)}
+            className="input"
+          >
+            <option value="STCS">STCS</option>
+            <option value="LCS">LCS</option>
+          </select>
           <button
             onClick={() => {
               if (!newKeyspaceName.trim()) return;
@@ -126,9 +153,11 @@ export function ControlPanel({ cluster, dispatch }: ControlPanelProps) {
                 type: "ADD_KEYSPACE",
                 name: newKeyspaceName.trim(),
                 replicationFactor: newKeyspaceRf,
+                compactionStrategy: newCompactionStrategy,
               });
               setNewKeyspaceName("");
               setNewKeyspaceRf(1);
+              setNewCompactionStrategy("STCS");
             }}
             className="btn-primary"
           >

@@ -6,6 +6,7 @@ import { DetailsPanel } from "./components/DetailsPanel";
 import { EventLog } from "./components/EventLog";
 import { StorageView } from "./components/StorageView";
 import { WriteSimulator } from "./components/WriteSimulator";
+import { CompactionView } from "./components/CompactionView";
 
 function App() {
   const { cluster, dispatch } = useCluster();
@@ -16,7 +17,7 @@ function App() {
     return () => clearTimeout(timer);
   }, [cluster.animation.joiningNodeId, dispatch]);
 
-  const tabButton = (tab: "topology" | "storage", label: string) => (
+  const tabButton = (tab: "topology" | "storage" | "compaction", label: string) => (
     <button
       onClick={() => dispatch({ type: "SET_ACTIVE_TAB", tab })}
       className={`px-5 py-2.5 text-sm font-medium transition-colors ${
@@ -43,19 +44,20 @@ function App() {
       <nav className="mb-6 flex justify-center border-b border-slate-700/60">
         {tabButton("topology", "Topology")}
         {tabButton("storage", "Storage Engine")}
+        {tabButton("compaction", "Compaction")}
       </nav>
 
       <main className="mx-auto grid max-w-6xl gap-6 lg:grid-cols-3">
         <section className="panel p-5 lg:col-span-2">
-          {cluster.activeTab === "topology" ? (
+          {cluster.activeTab === "topology" && (
             <TokenRing
               cluster={cluster}
               onSelectNode={(id) => dispatch({ type: "SELECT_NODE", nodeId: id })}
               highlightedNodeId={cluster.selectedNodeId}
             />
-          ) : (
-            <StorageView cluster={cluster} />
           )}
+          {cluster.activeTab === "storage" && <StorageView cluster={cluster} />}
+          {cluster.activeTab === "compaction" && <CompactionView cluster={cluster} dispatch={dispatch} />}
         </section>
 
         <aside className="space-y-5">

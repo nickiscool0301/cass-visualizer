@@ -16,6 +16,7 @@ describe("type smoke test", () => {
       id: "ks1",
       name: "system",
       replicationFactor: 1,
+      compactionStrategy: "STCS",
     };
     const cluster: Cluster = {
       id: "c1",

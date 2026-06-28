@@ -1,6 +1,7 @@
 import type {
   Cluster,
   ClusterEvent,
+  CompactionStrategy,
   Keyspace,
   Node,
   NodeStorage,
@@ -156,6 +157,82 @@ function writeToNode(
   return { ...storage, commitLog: nextCommitLog, memtable: nextMemtable };
 }
 
+function mergeRows(rows: StoredRow[]): StoredRow[] {
+  const byKey = new Map<string, StoredRow>();
+  for (const row of rows) {
+    const existing = byKey.get(row.partitionKey);
+    if (!existing || row.timestamp > existing.timestamp) {
+      byKey.set(row.partitionKey, row);
+    }
+  }
+  return Array.from(byKey.values()).sort((a, b) =>
+    a.partitionKey.localeCompare(b.partitionKey)
+  );
+}
+
+function compactSTCS(sstables: SSTable[]): { sstables: SSTable[]; compacted: boolean } {
+  const byLevel = new Map<number, SSTable[]>();
+  for (const sstable of sstables) {
+    const list = byLevel.get(sstable.level) ?? [];
+    list.push(sstable);
+    byLevel.set(sstable.level, list);
+  }
+
+  for (const [level, list] of byLevel.entries()) {
+    if (list.length >= 4) {
+      const toCompact = list.slice(0, 4);
+      const remaining = sstables.filter((s) => !toCompact.includes(s));
+      const mergedRows = mergeRows(toCompact.flatMap((s) => s.rows));
+      const newSstable: SSTable = {
+        id: generateId("sstable"),
+        rows: mergedRows,
+        createdAt: now(),
+        level: level + 1,
+      };
+      return { sstables: [newSstable, ...remaining], compacted: true };
+    }
+  }
+
+  return { sstables, compacted: false };
+}
+
+function compactLCS(sstables: SSTable[]): { sstables: SSTable[]; compacted: boolean } {
+  const byLevel = new Map<number, SSTable[]>();
+  for (const sstable of sstables) {
+    const list = byLevel.get(sstable.level) ?? [];
+    list.push(sstable);
+    byLevel.set(sstable.level, list);
+  }
+
+  for (let level = 0; ; level++) {
+    const list = byLevel.get(level) ?? [];
+    const limit = level === 0 ? 4 : 2;
+    if (list.length > limit) {
+      const remaining = sstables.filter((s) => !list.includes(s));
+      const mergedRows = mergeRows(list.flatMap((s) => s.rows));
+      const newSstable: SSTable = {
+        id: generateId("sstable"),
+        rows: mergedRows,
+        createdAt: now(),
+        level: level + 1,
+      };
+      return { sstables: [newSstable, ...remaining], compacted: true };
+    }
+    if (!byLevel.has(level)) break;
+  }
+
+  return { sstables, compacted: false };
+}
+
+function compactNode(storage: NodeStorage, strategy: CompactionStrategy): NodeStorage {
+  if (strategy === "LCS") {
+    const result = compactLCS(storage.sstables);
+    return { ...storage, sstables: result.sstables };
+  }
+  const result = compactSTCS(storage.sstables);
+  return { ...storage, sstables: result.sstables };
+}
+
 export function createInitialCluster(): Cluster {
   const tokenRange: [number, number] = [0, 999];
   const nodeCount = 3;
@@ -172,6 +249,7 @@ export function createInitialCluster(): Cluster {
     id: generateId("ks"),
     name: "demo",
     replicationFactor: 1,
+    compactionStrategy: "STCS",
   };
   return {
     id: generateId("cluster"),
@@ -190,13 +268,15 @@ export function createInitialCluster(): Cluster {
 export type ClusterAction =
   | { type: "ADD_NODE" }
   | { type: "REMOVE_NODE"; nodeId: string }
-  | { type: "ADD_KEYSPACE"; name: string; replicationFactor: number }
+  | { type: "ADD_KEYSPACE"; name: string; replicationFactor: number; compactionStrategy?: CompactionStrategy }
   | { type: "SET_REPLICATION_FACTOR"; keyspaceId: string; replicationFactor: number }
+  | { type: "SET_COMPACTION_STRATEGY"; keyspaceId: string; strategy: CompactionStrategy }
+  | { type: "COMPACT"; nodeId: string }
   | { type: "REBALANCE_TOKENS" }
   | { type: "RESET_CLUSTER" }
   | { type: "SELECT_NODE"; nodeId: string | null }
   | { type: "SET_ACTIVE_KEYSPACE"; keyspaceId: string }
-  | { type: "SET_ACTIVE_TAB"; tab: "topology" | "storage" }
+  | { type: "SET_ACTIVE_TAB"; tab: "topology" | "storage" | "compaction" }
   | { type: "WRITE"; partitionKey: string; value: string }
   | { type: "FLUSH_MEMTABLE"; nodeId: string }
   | { type: "CLEAR_ANIMATION" };
@@ -256,6 +336,7 @@ export function clusterReducer(state: Cluster, action: ClusterAction): Cluster {
         id: generateId("ks"),
         name: action.name,
         replicationFactor: Math.max(0, Math.min(action.replicationFactor, state.nodes.length)),
+        compactionStrategy: action.compactionStrategy ?? "STCS",
       };
       return {
         ...state,
@@ -279,6 +360,44 @@ export function clusterReducer(state: Cluster, action: ClusterAction): Cluster {
         ...state,
         keyspaces,
         events: addEvent(state.events, message),
+      };
+    }
+
+    case "SET_COMPACTION_STRATEGY": {
+      const keyspaces = state.keyspaces.map((k) =>
+        k.id === action.keyspaceId ? { ...k, compactionStrategy: action.strategy } : k
+      );
+      const changed = keyspaces.find((k) => k.id === action.keyspaceId);
+      return {
+        ...state,
+        keyspaces,
+        events: addEvent(
+          state.events,
+          `Compaction strategy for ${changed?.name ?? action.keyspaceId} set to ${action.strategy}`
+        ),
+      };
+    }
+
+    case "COMPACT": {
+      const activeKeyspace = state.keyspaces.find((k) => k.id === state.activeKeyspaceId);
+      const strategy = activeKeyspace?.compactionStrategy ?? "STCS";
+      const target = state.nodes.find((n) => n.id === action.nodeId);
+      if (!target) return state;
+      const prevCount = target.storage.sstables.length;
+      const nodes = state.nodes.map((node) =>
+        node.id === action.nodeId
+          ? { ...node, storage: compactNode(node.storage, strategy) }
+          : node
+      );
+      const updated = nodes.find((n) => n.id === action.nodeId)!;
+      const newCount = updated.storage.sstables.length;
+      return {
+        ...state,
+        nodes,
+        events: addEvent(
+          state.events,
+          `Compacted ${target.name} (${strategy}): ${prevCount} → ${newCount} SSTables`
+        ),
       };
     }
 
