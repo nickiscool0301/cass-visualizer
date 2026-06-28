@@ -1,12 +1,14 @@
 import { useEffect } from "react";
 import { useCluster } from "./hooks/useCluster";
 import { TokenRing } from "./components/TokenRing";
-import { ControlPanel } from "./components/ControlPanel";
+import { Sidebar } from "./components/Sidebar";
+import { CanvasToolbar } from "./components/CanvasToolbar";
 import { DetailsPanel } from "./components/DetailsPanel";
 import { EventLog } from "./components/EventLog";
 import { StorageView } from "./components/StorageView";
 import { WriteSimulator } from "./components/WriteSimulator";
 import { CompactionView } from "./components/CompactionView";
+import { KnowledgeView } from "./components/KnowledgeView";
 
 function App() {
   const { cluster, dispatch } = useCluster();
@@ -17,58 +19,39 @@ function App() {
     return () => clearTimeout(timer);
   }, [cluster.animation.joiningNodeId, cluster.animation.compactedNodeId, dispatch]);
 
-  const tabButton = (tab: "topology" | "storage" | "compaction", label: string) => (
-    <button
-      onClick={() => dispatch({ type: "SET_ACTIVE_TAB", tab })}
-      className={`px-5 py-2.5 text-sm font-medium transition-colors ${
-        cluster.activeTab === tab
-          ? "border-b-2 border-sky-400 text-sky-400"
-          : "text-slate-400 hover:text-slate-200"
-      }`}
-    >
-      {label}
-    </button>
-  );
-
   return (
-    <div className="min-h-screen bg-[#0b1120] p-4 sm:p-6">
-      <header className="mb-8 text-center">
-        <h1 className="text-3xl font-semibold tracking-tight text-slate-50">
-          Cassandra Cluster Visualizer
-        </h1>
-        <p className="mt-2 text-sm text-slate-400">
-          Interactive token-ring topology and storage engine for learning
-        </p>
-      </header>
+    <div className="flex h-screen overflow-hidden text-sm" style={{ backgroundColor: "var(--bg-primary)", color: "var(--text-primary)" }}>
+      <Sidebar activeTab={cluster.activeTab} dispatch={dispatch} />
 
-      <nav className="mb-6 flex justify-center border-b border-slate-700/60">
-        {tabButton("topology", "Topology")}
-        {tabButton("storage", "Storage Engine")}
-        {tabButton("compaction", "Compaction")}
-      </nav>
+      <main className="flex min-w-0 flex-1 flex-col">
+        <div className="flex-1 overflow-auto p-4 sm:p-5">
+          <CanvasToolbar cluster={cluster} dispatch={dispatch} />
 
-      <main className="mx-auto grid max-w-6xl gap-6 lg:grid-cols-3">
-        <section className="panel min-w-0 p-5 lg:col-span-2">
-          {cluster.activeTab === "topology" && (
-            <TokenRing
-              cluster={cluster}
-              onSelectNode={(id) => dispatch({ type: "SELECT_NODE", nodeId: id })}
-              highlightedNodeId={cluster.selectedNodeId}
-            />
-          )}
-          {cluster.activeTab === "storage" && <StorageView cluster={cluster} />}
-          {cluster.activeTab === "compaction" && <CompactionView cluster={cluster} dispatch={dispatch} />}
-        </section>
-
-        <aside className="min-w-0 space-y-5">
-          {cluster.activeTab === "storage" && (
-            <WriteSimulator cluster={cluster} dispatch={dispatch} />
-          )}
-          <ControlPanel cluster={cluster} dispatch={dispatch} />
-          <DetailsPanel cluster={cluster} />
-          <EventLog events={cluster.events} />
-        </aside>
+          <section className="mt-4 min-h-0 flex-1">
+            {cluster.activeTab === "topology" && (
+              <TokenRing
+                cluster={cluster}
+                onSelectNode={(id) => dispatch({ type: "SELECT_NODE", nodeId: id })}
+                highlightedNodeId={cluster.selectedNodeId}
+              />
+            )}
+            {cluster.activeTab === "storage" && <StorageView cluster={cluster} dispatch={dispatch} />}
+            {cluster.activeTab === "compaction" && <CompactionView cluster={cluster} dispatch={dispatch} />}
+            {cluster.activeTab === "knowledge" && <KnowledgeView />}
+          </section>
+        </div>
       </main>
+
+      <aside
+        className="hidden w-80 shrink-0 flex-col gap-4 overflow-y-auto border-l p-4 xl:flex"
+        style={{ backgroundColor: "var(--bg-secondary)", borderColor: "var(--border)" }}
+      >
+        {cluster.activeTab === "storage" && <WriteSimulator cluster={cluster} dispatch={dispatch} />}
+        <DetailsPanel cluster={cluster} />
+        <div className="min-h-0 flex-1 overflow-hidden">
+          <EventLog events={cluster.events} />
+        </div>
+      </aside>
     </div>
   );
 }
