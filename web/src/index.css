@@ -15,6 +15,7 @@
   --text-tertiary: #9fa6ad;
   --accent: #2383e2;
   --accent-soft: rgba(35, 131, 226, 0.12);
+  --warning: #d97706;
 }
 
 html {

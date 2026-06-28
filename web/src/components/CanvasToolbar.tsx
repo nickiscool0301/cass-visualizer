@@ -163,10 +163,9 @@ export function CanvasToolbar({ cluster, dispatch }: CanvasToolbarProps) {
             >
               Add
             </button>
+            {duplicateName && <span style={{ color: "var(--warning)" }}>Name exists</span>}
           </div>
         )}
-
-        {duplicateName && <span style={{ color: "#d97706" }}>Name exists</span>}
       </div>
     </div>
   );
