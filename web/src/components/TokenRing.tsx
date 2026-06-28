@@ -65,7 +65,9 @@ export function TokenRing({ cluster, onSelectNode, highlightedNodeId }: TokenRin
               opacity={opacity}
               stroke="#0f172a"
               strokeWidth={2}
-              className="cursor-pointer transition-opacity hover:opacity-80"
+              className={`cursor-pointer transition-all duration-500 ease-in-out hover:opacity-80 ${
+                isHighlighted ? "animate-pulse-ring" : ""
+              }`}
               onClick={() => onSelectNode(arc.nodeId)}
               onMouseEnter={() => setHoveredNodeId(arc.nodeId)}
               onMouseLeave={() => setHoveredNodeId(null)}
@@ -78,6 +80,7 @@ export function TokenRing({ cluster, onSelectNode, highlightedNodeId }: TokenRin
         })}
         {cluster.nodes.map((node) => {
           const tokenAngles = node.tokens.map((t) => tokenToAngle(t, cluster.tokenRange) - Math.PI / 2);
+          const nodeHighlighted = highlightedNodeId === node.id || hoveredNodeId === node.id;
           return tokenAngles.map((angle, i) => {
             const x = Math.cos(angle) * dims.radius;
             const y = Math.sin(angle) * dims.radius;
@@ -86,8 +89,9 @@ export function TokenRing({ cluster, onSelectNode, highlightedNodeId }: TokenRin
                 key={`${node.id}-tick-${i}`}
                 cx={x}
                 cy={y}
-                r={3}
+                r={nodeHighlighted ? 5 : 3}
                 fill="#fff"
+                className="transition-all duration-300"
               />
             );
           });

@@ -143,6 +143,7 @@ export function createInitialCluster(): Cluster {
     selectedNodeId: null,
     activeKeyspaceId: keyspace.id,
     activeTab: "topology",
+    animation: { writeTargetNodeId: null, flushedNodeId: null },
   };
 }
 
@@ -157,7 +158,8 @@ export type ClusterAction =
   | { type: "SET_ACTIVE_KEYSPACE"; keyspaceId: string }
   | { type: "SET_ACTIVE_TAB"; tab: "topology" | "storage" }
   | { type: "WRITE"; partitionKey: string; value: string }
-  | { type: "FLUSH_MEMTABLE"; nodeId: string };
+  | { type: "FLUSH_MEMTABLE"; nodeId: string }
+  | { type: "CLEAR_ANIMATION" };
 
 export function clusterReducer(state: Cluster, action: ClusterAction): Cluster {
   switch (action.type) {
@@ -294,6 +296,7 @@ export function clusterReducer(state: Cluster, action: ClusterAction): Cluster {
         ...state,
         nodes,
         events: addEvent(state.events, message),
+        animation: { ...state.animation, writeTargetNodeId: replicaIds[0] ?? null, flushedNodeId: flushed ? replicaIds[0] ?? null : null },
       };
     }
 
@@ -309,7 +312,12 @@ export function clusterReducer(state: Cluster, action: ClusterAction): Cluster {
         ...state,
         nodes,
         events: addEvent(state.events, `Memtable flushed on ${target.name}`),
+        animation: { ...state.animation, flushedNodeId: target.id },
       };
+    }
+
+    case "CLEAR_ANIMATION": {
+      return { ...state, animation: { writeTargetNodeId: null, flushedNodeId: null } };
     }
 
     default:

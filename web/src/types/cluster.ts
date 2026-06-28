@@ -40,6 +40,11 @@ export interface ClusterEvent {
   message: string;
 }
 
+export interface ClusterAnimation {
+  writeTargetNodeId: string | null;
+  flushedNodeId: string | null;
+}
+
 export interface Cluster {
   id: string;
   name: string;
@@ -50,6 +55,7 @@ export interface Cluster {
   selectedNodeId: string | null;
   activeKeyspaceId: string | null;
   activeTab: "topology" | "storage";
+  animation: ClusterAnimation;
 }
 
 export interface TokenRange {
