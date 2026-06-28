@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { arc } from "d3-shape";
 import type { Cluster } from "../types/cluster";
 import { getRingArcs, getRingDimensions, tokenToAngle } from "../lib/ringGeometry";
@@ -11,8 +11,27 @@ interface TokenRingProps {
 }
 
 export function TokenRing({ cluster, onSelectNode, highlightedNodeId }: TokenRingProps) {
-  const size = 320;
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [size, setSize] = useState(320);
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const update = () => {
+      const rect = el.getBoundingClientRect();
+      setSize(Math.max(Math.min(rect.width, rect.height, 420), 200));
+    };
+    update();
+    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(update) : null;
+    ro?.observe(el);
+    window.addEventListener("resize", update);
+    return () => {
+      ro?.disconnect();
+      window.removeEventListener("resize", update);
+    };
+  }, []);
+
   const dims = useMemo(() => getRingDimensions(size), [size]);
   const activeKeyspace = cluster.keyspaces.find((k) => k.id === cluster.activeKeyspaceId);
   const rf = activeKeyspace?.replicationFactor ?? 1;
@@ -34,14 +53,15 @@ export function TokenRing({ cluster, onSelectNode, highlightedNodeId }: TokenRin
     .endAngle((d) => d.endAngle);
 
   return (
-    <svg
-      width={dims.width}
-      height={dims.height}
-      viewBox={`0 0 ${dims.width} ${dims.height}`}
-      role="img"
-      aria-label="Cassandra token ring"
-      className="mx-auto"
-    >
+    <div ref={containerRef} className="flex h-full w-full items-center justify-center">
+      <svg
+        width={dims.width}
+        height={dims.height}
+        viewBox={`0 0 ${dims.width} ${dims.height}`}
+        role="img"
+        aria-label="Cassandra token ring"
+        className="mx-auto"
+      >
       <g transform={`translate(${dims.centerX}, ${dims.centerY})`}>
         {arcs.map((arc, i) => {
           const isHighlighted = highlightedNodeId === arc.nodeId || hoveredNodeId === arc.nodeId;
@@ -64,7 +84,7 @@ export function TokenRing({ cluster, onSelectNode, highlightedNodeId }: TokenRin
               }
               fill={arc.color}
               opacity={opacity}
-              stroke="#0f172a"
+              stroke="#e3e3e3"
               strokeWidth={2}
               className={`cursor-pointer transition-all duration-500 ease-in-out hover:opacity-80 ${
                 isHighlighted ? "animate-pulse-ring" : ""
@@ -99,5 +119,6 @@ export function TokenRing({ cluster, onSelectNode, highlightedNodeId }: TokenRin
         })}
       </g>
     </svg>
+    </div>
   );
 }
