@@ -4,6 +4,9 @@ export interface StoredRow {
   partitionKey: string;
   value: string;
   timestamp: number;
+  isTombstone?: boolean;
+  ttl?: number;
+  expiresAt?: number;
 }
 
 export interface SSTable {
@@ -59,7 +62,7 @@ export interface Cluster {
   events: ClusterEvent[];
   selectedNodeId: string | null;
   activeKeyspaceId: string | null;
-  activeTab: "topology" | "storage" | "compaction";
+  activeTab: "topology" | "storage" | "compaction" | "knowledge";
   animation: ClusterAnimation;
 }
 

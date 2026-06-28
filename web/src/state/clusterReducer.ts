@@ -276,7 +276,7 @@ export type ClusterAction =
   | { type: "RESET_CLUSTER" }
   | { type: "SELECT_NODE"; nodeId: string | null }
   | { type: "SET_ACTIVE_KEYSPACE"; keyspaceId: string }
-  | { type: "SET_ACTIVE_TAB"; tab: "topology" | "storage" | "compaction" }
+  | { type: "SET_ACTIVE_TAB"; tab: "topology" | "storage" | "compaction" | "knowledge" }
   | { type: "WRITE"; partitionKey: string; value: string }
   | { type: "FLUSH_MEMTABLE"; nodeId: string }
   | { type: "CLEAR_ANIMATION" };

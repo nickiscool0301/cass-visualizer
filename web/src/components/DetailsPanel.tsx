@@ -10,34 +10,34 @@ export function DetailsPanel({ cluster }: DetailsPanelProps) {
   const activeKeyspace = cluster.keyspaces.find((k) => k.id === cluster.activeKeyspaceId);
 
   return (
-    <div className="panel p-5">
-      <h2 className="text-lg font-semibold text-slate-50">Details</h2>
+    <div className="panel p-4">
+      <h2 className="text-sm font-semibold text-gray-900">Details</h2>
       {selectedNode ? (
-        <div className="mt-4 space-y-3 text-sm">
+        <div className="mt-3 space-y-3 text-xs">
           <div className="flex items-center gap-2">
             <span
-              className="inline-block h-3 w-3 rounded-full"
+              className="inline-block h-2.5 w-2.5 rounded-full"
               style={{ backgroundColor: selectedNode.color }}
             />
-            <span className="font-medium text-slate-200">{selectedNode.name}</span>
+            <span className="font-medium text-gray-900">{selectedNode.name}</span>
           </div>
-          <div className="grid grid-cols-2 gap-2 text-slate-300">
+          <div className="grid grid-cols-2 gap-2 text-gray-700">
             <div>
-              <span className="text-xs uppercase tracking-wide text-slate-500">Status</span>
+              <span className="text-[10px] uppercase tracking-wide text-gray-500">Status</span>
               <p className="mt-0.5 capitalize">{selectedNode.status}</p>
             </div>
             <div>
-              <span className="text-xs uppercase tracking-wide text-slate-500">Tokens</span>
+              <span className="text-[10px] uppercase tracking-wide text-gray-500">Tokens</span>
               <p className="mt-0.5">{selectedNode.tokens.join(", ")}</p>
             </div>
           </div>
           <div>
-            <span className="text-xs uppercase tracking-wide text-slate-500">Owned ranges</span>
-            <ul className="mt-1.5 space-y-1 text-slate-300">
+            <span className="text-[10px] uppercase tracking-wide text-gray-500">Owned ranges</span>
+            <ul className="mt-1 space-y-1 text-gray-700">
               {getNodeOwnedRanges(selectedNode.id, cluster.nodes, cluster.tokenRange).map(
                 (range, i) => (
-                  <li key={i} className="rounded bg-slate-800/60 px-2 py-1 text-xs">
-                    {range.start} <span className="text-slate-500">→</span> {range.end}
+                  <li key={i} className="rounded bg-gray-100 px-2 py-0.5 text-[10px]">
+                    {range.start} <span className="text-gray-400">→</span> {range.end}
                   </li>
                 )
               )}
@@ -45,30 +45,33 @@ export function DetailsPanel({ cluster }: DetailsPanelProps) {
           </div>
         </div>
       ) : (
-        <div className="mt-4 space-y-3 text-sm text-slate-300">
+        <div className="mt-3 space-y-2 text-xs text-gray-700">
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <span className="text-xs uppercase tracking-wide text-slate-500">Cluster</span>
+              <span className="text-[10px] uppercase tracking-wide text-gray-500">Cluster</span>
               <p className="mt-0.5">{cluster.name}</p>
             </div>
             <div>
-              <span className="text-xs uppercase tracking-wide text-slate-500">Nodes</span>
+              <span className="text-[10px] uppercase tracking-wide text-gray-500">Nodes</span>
               <p className="mt-0.5">{cluster.nodes.length}</p>
             </div>
           </div>
-          <div>
-            <span className="text-xs uppercase tracking-wide text-slate-500">Keyspaces</span>
-            <p className="mt-0.5">{cluster.keyspaces.length}</p>
-          </div>
-          {activeKeyspace && (
+          <div className="grid grid-cols-2 gap-2">
             <div>
-              <span className="text-xs uppercase tracking-wide text-slate-500">Active keyspace</span>
-              <p className="mt-0.5">
-                {activeKeyspace.name} <span className="text-slate-500">(RF={activeKeyspace.replicationFactor})</span>
-              </p>
+              <span className="text-[10px] uppercase tracking-wide text-gray-500">Keyspaces</span>
+              <p className="mt-0.5">{cluster.keyspaces.length}</p>
             </div>
-          )}
-          <p className="text-xs text-slate-500">Click a node on the ring to see details.</p>
+            {activeKeyspace && (
+              <div>
+                <span className="text-[10px] uppercase tracking-wide text-gray-500">Keyspace</span>
+                <p className="mt-0.5">
+                  {activeKeyspace.name}{" "}
+                  <span className="text-gray-500">(RF={activeKeyspace.replicationFactor})</span>
+                </p>
+              </div>
+            )}
+          </div>
+          <p className="text-[10px] text-gray-500">Click a node on the ring to see details.</p>
         </div>
       )}
     </div>

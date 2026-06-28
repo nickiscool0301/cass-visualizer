@@ -55,10 +55,10 @@ function NodeCompactionCard({
 
   return (
     <div
-      className={`border-b pb-4 transition-all duration-300 ${isCompacted ? "animate-glow" : ""}`}
-      style={{ borderColor: "var(--border-subtle)" }}
+      className={`rounded-lg border p-4 transition-all duration-300 ${isCompacted ? "animate-glow" : ""}`}
+      style={{ backgroundColor: "var(--bg-secondary)", borderColor: "var(--border)" }}
     >
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between border-b pb-2 mb-3" style={{ borderColor: "var(--border-subtle)" }}>
         <div className="flex items-center gap-2">
           <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: node.color }} />
           <h3 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
@@ -78,7 +78,7 @@ function NodeCompactionCard({
         {levels.length === 0 && <p className="text-[11px]" style={{ color: "var(--text-secondary)" }}>No SSTables yet. Write data in Storage, then flush.</p>}
         {levels.map(([level, sstables]) => (
           <div key={level}>
-            <h4 className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: "var(--text-tertiary)" }}>
+            <h4 className="text-[10px] font-bold uppercase tracking-wide" style={{ color: "var(--text-tertiary)" }}>
               Level {level}
             </h4>
             <div className="mt-1 flex flex-wrap gap-1.5">
@@ -94,8 +94,8 @@ function NodeCompactionCard({
         ))}
       </div>
 
-      <div className="mt-3 text-[11px]" style={{ color: "var(--text-secondary)" }}>
-        Strategy: <span style={{ color: "var(--text-primary)" }}>{strategy}</span>
+      <div className="mt-4 pt-2 border-t text-[11px]" style={{ borderColor: "var(--border-subtle)", color: "var(--text-secondary)" }}>
+        Strategy: <span className="font-semibold" style={{ color: "var(--text-primary)" }}>{strategy}</span>
       </div>
     </div>
   );
@@ -114,7 +114,7 @@ export function CompactionView({ cluster, dispatch }: CompactionViewProps) {
       </p>
 
       <div className="grid gap-4 sm:grid-cols-2">
-        <div className="rounded border p-3" style={{ borderColor: "var(--border-subtle)" }}>
+        <div className="rounded-lg border p-4" style={{ backgroundColor: "var(--bg-secondary)", borderColor: "var(--border)" }}>
           <h3 className="text-xs font-semibold" style={{ color: "var(--text-primary)" }}>How to test compaction</h3>
           <ol className="mt-1 list-decimal space-y-0.5 pl-3 text-[11px]" style={{ color: "var(--text-secondary)" }}>
             <li>Go to the <strong>Storage</strong> tab.</li>
@@ -124,7 +124,7 @@ export function CompactionView({ cluster, dispatch }: CompactionViewProps) {
           </ol>
         </div>
 
-        <div className="rounded border p-3" style={{ borderColor: "var(--border-subtle)" }}>
+        <div className="rounded-lg border p-4" style={{ backgroundColor: "var(--bg-secondary)", borderColor: "var(--border)" }}>
           <h3 className="text-xs font-semibold" style={{ color: "var(--text-primary)" }}>
             {strategy === "STCS" ? "Size-Tiered Compaction (STCS)" : "Leveled Compaction (LCS)"}
           </h3>

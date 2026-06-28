@@ -7,25 +7,108 @@ interface SidebarProps {
   dispatch: React.Dispatch<ClusterAction>;
 }
 
-const items: { tab: Tab; label: string; icon: string }[] = [
-  { tab: "topology", label: "Topology", icon: "◎" },
-  { tab: "storage", label: "Storage", icon: "◈" },
-  { tab: "compaction", label: "Compaction", icon: "▦" },
-  { tab: "knowledge", label: "Knowledge", icon: "❖" },
+const items: { tab: Tab; label: string; icon: React.ReactNode }[] = [
+  {
+    tab: "topology",
+    label: "Topology",
+    icon: (
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className="h-4 w-4"
+      >
+        <circle cx="12" cy="12" r="8" />
+        <circle cx="12" cy="4" r="1" fill="currentColor" />
+        <circle cx="20" cy="12" r="1" fill="currentColor" />
+        <circle cx="12" cy="20" r="1" fill="currentColor" />
+        <circle cx="4" cy="12" r="1" fill="currentColor" />
+      </svg>
+    ),
+  },
+  {
+    tab: "storage",
+    label: "Storage",
+    icon: (
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className="h-4 w-4"
+      >
+        <ellipse cx="12" cy="5" rx="9" ry="3" />
+        <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
+        <path d="M3 12c0 1.66 4 3 9 3s9-1.34 9-3" />
+      </svg>
+    ),
+  },
+  {
+    tab: "compaction",
+    label: "Compaction",
+    icon: (
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className="h-4 w-4"
+      >
+        <rect x="3" y="3" width="18" height="6" rx="1" />
+        <rect x="3" y="11" width="18" height="6" rx="1" />
+        <path d="M12 18v3" />
+        <path d="M9 20h6" />
+      </svg>
+    ),
+  },
+  {
+    tab: "knowledge",
+    label: "Knowledge",
+    icon: (
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className="h-4 w-4"
+      >
+        <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
+        <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
+      </svg>
+    ),
+  },
 ];
 
 export function Sidebar({ activeTab, dispatch }: SidebarProps) {
   return (
     <nav
       className="flex h-full w-14 shrink-0 flex-col gap-1 border-r p-2 sm:w-56"
-      style={{ backgroundColor: "var(--bg-secondary)", borderColor: "var(--border)" }}
+      style={{
+        backgroundColor: "var(--bg-secondary)",
+        borderColor: "var(--border)",
+      }}
       aria-label="Main navigation"
     >
       <div className="mb-2 px-2 py-1.5">
-        <span className="hidden text-sm font-semibold sm:inline" style={{ color: "var(--text-primary)" }}>
-          Cass Viz
+        <span
+          className="hidden text-sm font-semibold sm:inline"
+          style={{ color: "var(--text-primary)" }}
+        >
+          Cassandra Visualizer
         </span>
-        <span className="text-sm font-semibold sm:hidden" style={{ color: "var(--text-primary)" }}>
+        <span
+          className="text-sm font-semibold sm:hidden"
+          style={{ color: "var(--text-primary)" }}
+        >
           CV
         </span>
       </div>
@@ -42,7 +125,9 @@ export function Sidebar({ activeTab, dispatch }: SidebarProps) {
             }}
             aria-current={isActive ? "page" : undefined}
           >
-            <span className="inline-flex w-4 justify-center">{icon}</span>
+            <span className="inline-flex h-4 w-4 items-center justify-center shrink-0">
+              {icon}
+            </span>
             <span className="hidden sm:inline">{label}</span>
           </button>
         );
