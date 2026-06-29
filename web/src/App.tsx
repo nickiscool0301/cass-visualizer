@@ -7,6 +7,7 @@ import { DetailsPanel } from "./components/DetailsPanel";
 import { EventLog } from "./components/EventLog";
 import { StorageView } from "./components/StorageView";
 import { WriteSimulator } from "./components/WriteSimulator";
+import { ReadSimulator } from "./components/ReadSimulator";
 import { CompactionView } from "./components/CompactionView";
 import { RepairView } from "./components/RepairView";
 import { KnowledgeView } from "./components/KnowledgeView";
@@ -18,12 +19,21 @@ function App() {
     if (
       cluster.animation.joiningNodeId === null &&
       cluster.animation.compactedNodeId === null &&
-      cluster.animation.repairingNodeId === null
+      cluster.animation.repairingNodeId === null &&
+      cluster.animation.readCoordinatorNodeId === null &&
+      cluster.animation.readRepairTargetNodeId === null
     )
       return;
     const timer = setTimeout(() => dispatch({ type: "CLEAR_ANIMATION" }), 1600);
     return () => clearTimeout(timer);
-  }, [cluster.animation.joiningNodeId, cluster.animation.compactedNodeId, cluster.animation.repairingNodeId, dispatch]);
+  }, [
+    cluster.animation.joiningNodeId,
+    cluster.animation.compactedNodeId,
+    cluster.animation.repairingNodeId,
+    cluster.animation.readCoordinatorNodeId,
+    cluster.animation.readRepairTargetNodeId,
+    dispatch,
+  ]);
 
   return (
     <div className="flex h-screen overflow-hidden text-sm" style={{ backgroundColor: "var(--bg-primary)", color: "var(--text-primary)" }}>
@@ -53,7 +63,12 @@ function App() {
         className="hidden w-80 shrink-0 flex-col gap-4 overflow-y-auto border-l p-4 xl:flex"
         style={{ backgroundColor: "var(--bg-secondary)", borderColor: "var(--border)" }}
       >
-        {cluster.activeTab === "storage" && <WriteSimulator cluster={cluster} dispatch={dispatch} />}
+        {cluster.activeTab === "storage" && (
+          <>
+            <WriteSimulator cluster={cluster} dispatch={dispatch} />
+            <ReadSimulator cluster={cluster} dispatch={dispatch} />
+          </>
+        )}
         <DetailsPanel cluster={cluster} />
         <div className="min-h-0 flex-1 overflow-hidden">
           <EventLog events={cluster.events} />

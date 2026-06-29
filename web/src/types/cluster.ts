@@ -59,6 +59,15 @@ export interface ClusterAnimation {
   compactedNodeId: string | null;
   repairingNodeId: string | null;
   lastWriteAction: "write" | "write_ttl" | "delete" | null;
+  readCoordinatorNodeId: string | null;
+  readRepairTargetNodeId: string | null;
+}
+
+export interface ReadRepairState {
+  partitionKey: string | null;
+  coordinatorId: string | null;
+  digestMismatches: string[];
+  resolvedValue: string | null;
 }
 
 export interface Cluster {
@@ -73,6 +82,7 @@ export interface Cluster {
   activeTab: "topology" | "storage" | "compaction" | "repair" | "knowledge";
   animation: ClusterAnimation;
   gcGraceSeconds: number;
+  lastReadResult: ReadRepairState | null;
 }
 
 export interface TokenRange {

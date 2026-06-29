@@ -171,6 +171,29 @@ function deleteToNode(storage: NodeStorage, partitionKey: string): NodeStorage {
   return { ...storage, commitLog: nextCommitLog, memtable: nextMemtable };
 }
 
+function writeRowToNode(storage: NodeStorage, row: StoredRow): NodeStorage {
+  const nextCommitLog = [row, ...storage.commitLog];
+  const nextMemtable = [row, ...storage.memtable];
+  const needsFlush = nextMemtable.length >= 5;
+  if (needsFlush) {
+    return flushMemtable({ ...storage, commitLog: nextCommitLog, memtable: nextMemtable });
+  }
+  return { ...storage, commitLog: nextCommitLog, memtable: nextMemtable };
+}
+
+function findLatestRow(storage: NodeStorage, partitionKey: string): StoredRow | undefined {
+  const allRows = [...storage.memtable, ...storage.sstables.flatMap((s) => s.rows)];
+  const matches = allRows.filter((r) => r.partitionKey === partitionKey);
+  if (matches.length === 0) return undefined;
+  return matches.reduce((latest, row) => (row.timestamp > latest.timestamp ? row : latest));
+}
+
+function digestEqual(a: StoredRow | undefined, b: StoredRow | undefined): boolean {
+  if (a === undefined && b === undefined) return true;
+  if (a === undefined || b === undefined) return false;
+  return a.value === b.value && a.timestamp === b.timestamp && !!a.isTombstone === !!b.isTombstone;
+}
+
 function expireTTLRows(storage: NodeStorage, currentTime: number): NodeStorage {
   let changed = false;
   const nextMemtable = storage.memtable.map((row) => {
@@ -311,7 +334,8 @@ export function createInitialCluster(): Cluster {
     selectedNodeId: null,
     activeKeyspaceId: keyspace.id,
     activeTab: "topology",
-    animation: { writeTargetNodeId: null, flushedNodeId: null, joiningNodeId: null, compactedNodeId: null, repairingNodeId: null, lastWriteAction: null },
+    animation: { writeTargetNodeId: null, flushedNodeId: null, joiningNodeId: null, compactedNodeId: null, repairingNodeId: null, lastWriteAction: null, readCoordinatorNodeId: null, readRepairTargetNodeId: null },
+    lastReadResult: null,
     gcGraceSeconds: 10,
   };
 }
@@ -336,6 +360,8 @@ export type ClusterAction =
   | { type: "SET_GC_GRACE_SECONDS"; seconds: number }
   | { type: "FLUSH_MEMTABLE"; nodeId: string }
   | { type: "RUN_REPAIR" }
+  | { type: "READ"; partitionKey: string }
+  | { type: "EXECUTE_READ_REPAIR"; partitionKey: string }
   | { type: "CLEAR_ANIMATION" };
 
 export function clusterReducer(state: Cluster, action: ClusterAction): Cluster {
@@ -760,8 +786,135 @@ export function clusterReducer(state: Cluster, action: ClusterAction): Cluster {
       };
     }
 
+    case "READ": {
+      const token = hashPartitionKey(action.partitionKey, state.tokenRange);
+      const activeKeyspace = state.keyspaces.find((k) => k.id === state.activeKeyspaceId);
+      const rf = activeKeyspace?.replicationFactor ?? 1;
+      const replicaIds = getReplicaNodeIds(token, rf, state.nodes);
+      if (replicaIds.length === 0) {
+        return {
+          ...state,
+          events: addEvent(state.events, "No replicas available for read"),
+          lastReadResult: {
+            partitionKey: action.partitionKey,
+            coordinatorId: null,
+            digestMismatches: [],
+            resolvedValue: null,
+          },
+        };
+      }
+      const coordinatorId = replicaIds[0];
+      const coordinator = state.nodes.find((n) => n.id === coordinatorId)!;
+      const coordinatorRow = findLatestRow(coordinator.storage, action.partitionKey);
+      const mismatches: string[] = [];
+      for (const replicaId of replicaIds) {
+        if (replicaId === coordinatorId) continue;
+        const replica = state.nodes.find((n) => n.id === replicaId)!;
+        const replicaRow = findLatestRow(replica.storage, action.partitionKey);
+        if (!digestEqual(coordinatorRow, replicaRow)) {
+          mismatches.push(replicaId);
+        }
+      }
+      const matched = mismatches.length === 0;
+      const returnedValue = coordinatorRow?.value ?? null;
+      const eventMessage = matched
+        ? `Read ${action.partitionKey}: digests matched`
+        : `Read ${action.partitionKey}: digest mismatch detected`;
+      return {
+        ...state,
+        events: addEvent(state.events, eventMessage),
+        lastReadResult: {
+          partitionKey: action.partitionKey,
+          coordinatorId,
+          digestMismatches: mismatches,
+          resolvedValue: matched ? returnedValue : null,
+        },
+        animation: {
+          ...state.animation,
+          readCoordinatorNodeId: coordinatorId,
+          readRepairTargetNodeId: null,
+        },
+      };
+    }
+
+    case "EXECUTE_READ_REPAIR": {
+      const token = hashPartitionKey(action.partitionKey, state.tokenRange);
+      const activeKeyspace = state.keyspaces.find((k) => k.id === state.activeKeyspaceId);
+      const rf = activeKeyspace?.replicationFactor ?? 1;
+      const replicaIds = getReplicaNodeIds(token, rf, state.nodes);
+      if (replicaIds.length === 0) {
+        return {
+          ...state,
+          events: addEvent(state.events, "No replicas available for read repair"),
+          lastReadResult: {
+            partitionKey: action.partitionKey,
+            coordinatorId: null,
+            digestMismatches: [],
+            resolvedValue: null,
+          },
+        };
+      }
+      const coordinatorId = replicaIds[0];
+      let winner: StoredRow | undefined;
+      for (const replicaId of replicaIds) {
+        const replica = state.nodes.find((n) => n.id === replicaId)!;
+        const row = findLatestRow(replica.storage, action.partitionKey);
+        if (row && (!winner || row.timestamp > winner.timestamp)) {
+          winner = row;
+        }
+      }
+      if (!winner) {
+        return {
+          ...state,
+          events: addEvent(
+            state.events,
+            `Read repair resolved ${action.partitionKey} -> (no data); no repair needed`
+          ),
+          lastReadResult: {
+            partitionKey: action.partitionKey,
+            coordinatorId,
+            digestMismatches: [],
+            resolvedValue: null,
+          },
+          animation: {
+            ...state.animation,
+            readCoordinatorNodeId: null,
+            readRepairTargetNodeId: null,
+          },
+        };
+      }
+      const repairedIds: string[] = [];
+      const nodes = state.nodes.map((node) => {
+        if (!replicaIds.includes(node.id)) return node;
+        const currentRow = findLatestRow(node.storage, action.partitionKey);
+        if (!digestEqual(currentRow, winner)) {
+          repairedIds.push(node.id);
+          return { ...node, storage: writeRowToNode(node.storage, winner) };
+        }
+        return node;
+      });
+      const repairedNames = repairedIds.map((id) => state.nodes.find((n) => n.id === id)?.name ?? id);
+      const eventMessage = `Read repair resolved ${action.partitionKey} -> ${winner.value}; repaired ${repairedNames.join(", ")}`;
+      return {
+        ...state,
+        nodes,
+        events: addEvent(state.events, eventMessage),
+        lastReadResult: {
+          partitionKey: action.partitionKey,
+          coordinatorId,
+          digestMismatches: [],
+          resolvedValue: winner.value,
+        },
+        animation: {
+          ...state.animation,
+          readCoordinatorNodeId: null,
+          readRepairTargetNodeId: repairedIds[0] ?? null,
+        },
+      };
+    }
+
     case "CLEAR_ANIMATION": {
-      return { ...state, animation: { writeTargetNodeId: null, flushedNodeId: null, joiningNodeId: null, compactedNodeId: null, repairingNodeId: null, lastWriteAction: null } };
+      return { ...state, animation: { writeTargetNodeId: null, flushedNodeId: null, joiningNodeId: null, compactedNodeId: null, repairingNodeId: null, lastWriteAction: null, readCoordinatorNodeId: null, readRepairTargetNodeId: null } };
     }
 
     default:
