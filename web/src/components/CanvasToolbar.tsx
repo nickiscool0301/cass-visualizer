@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Cluster, CompactionStrategy } from "../types/cluster";
 import type { ClusterAction } from "../state/clusterReducer";
 
@@ -22,6 +22,12 @@ export function CanvasToolbar({ cluster, dispatch }: CanvasToolbarProps) {
   const [targetNodeId, setTargetNodeId] = useState(cluster.nodes[0]?.id ?? "");
   const [directKey, setDirectKey] = useState("");
   const [directValue, setDirectValue] = useState("");
+
+  useEffect(() => {
+    if (targetNodeId && !cluster.nodes.some((n) => n.id === targetNodeId)) {
+      setTargetNodeId(cluster.nodes[0]?.id ?? "");
+    }
+  }, [cluster.nodes, targetNodeId]);
 
   const activeKeyspace = cluster.keyspaces.find((k) => k.id === cluster.activeKeyspaceId);
   const trimmedName = newKeyspaceName.trim();

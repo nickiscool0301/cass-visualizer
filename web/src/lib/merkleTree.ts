@@ -84,3 +84,28 @@ export function collectLeafRanges(node: MerkleNode): Array<[number, number]> {
   }
   return node.children.flatMap(collectLeafRanges);
 }
+
+export function findLeafForRange(
+  tree: MerkleNode,
+  range: [number, number]
+): MerkleNode | null {
+  if (
+    tree.range[0] === range[0] &&
+    tree.range[1] === range[1]
+  ) {
+    if (!tree.children || tree.children.length === 0) {
+      return tree;
+    }
+  }
+
+  if (!tree.children || tree.children.length === 0) {
+    return null;
+  }
+
+  for (const child of tree.children) {
+    const leaf = findLeafForRange(child, range);
+    if (leaf) return leaf;
+  }
+
+  return null;
+}

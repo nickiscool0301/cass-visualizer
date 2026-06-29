@@ -9,8 +9,8 @@ import type {
   SSTable,
   StoredRow,
 } from "../types/cluster";
-import { buildMerkleTree, collectLeafRanges } from "../lib/merkleTree";
-import { getAllTokenPoints, getReplicaNodeIds } from "../lib/replicaPlacement";
+import { buildMerkleTree, collectLeafRanges, findLeafForRange, hashPartitionKey } from "../lib/merkleTree";
+import { getAllTokenPoints, getConsistentReplicaSetForRange, getReplicaNodeIds } from "../lib/replicaPlacement";
 
 const palette = [
   "#ef4444", // red-500
@@ -112,17 +112,6 @@ function splitLargestRange(
   let mid = largestStart + Math.floor(largestSize / 2);
   if (mid > tokenRange[1]) mid -= span;
   return { ownerId: largestOwner, newToken: mid };
-}
-
-function hashPartitionKey(key: string, tokenRange: [number, number]): number {
-  let hash = 0;
-  for (let i = 0; i < key.length; i++) {
-    hash = (hash << 5) - hash + key.charCodeAt(i);
-    hash |= 0;
-  }
-  const [min, max] = tokenRange;
-  const span = max - min + 1;
-  return min + (Math.abs(hash) % span);
 }
 
 function flushMemtable(storage: NodeStorage): NodeStorage {
@@ -708,10 +697,15 @@ export function clusterReducer(state: Cluster, action: ClusterAction): Cluster {
       }));
 
       for (const range of leafRanges) {
-        const replicaIds = getReplicaNodeIds(range[0], rf, state.nodes);
-        if (replicaIds.length < 2) continue;
+        const replicaIds = getConsistentReplicaSetForRange(range, rf, state.nodes, state.tokenRange);
+        if (!replicaIds || replicaIds.length < 2) continue;
 
-        const hashes = new Set(replicaIds.map((id) => trees.get(id)?.hash));
+        const hashes = new Set(
+          replicaIds.map((id) => {
+            const leaf = findLeafForRange(trees.get(id)!, range);
+            return leaf?.hash;
+          })
+        );
         if (hashes.size <= 1) continue;
 
         mismatchCount++;
@@ -723,7 +717,9 @@ export function clusterReducer(state: Cluster, action: ClusterAction): Cluster {
           allReplicaRows.push(...getRowsInRange(allRows, range, state.tokenRange));
         }
 
-        const authoritative = latestByKey(mergeRows(allReplicaRows, state.gcGraceSeconds));
+        const authoritative = new Map(
+          mergeRows(allReplicaRows, state.gcGraceSeconds).map((r) => [r.partitionKey, r])
+        );
 
         for (const targetId of replicaIds) {
           const targetNode = nextNodes.find((n) => n.id === targetId)!;

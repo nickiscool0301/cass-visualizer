@@ -1,7 +1,8 @@
 import type { Cluster, MerkleNode, Node } from "../types/cluster";
 import type { ClusterAction } from "../state/clusterReducer";
 import { mergeRows } from "../state/clusterReducer";
-import { buildMerkleTree } from "../lib/merkleTree";
+import { buildMerkleTree, findLeafForRange } from "../lib/merkleTree";
+import { getConsistentReplicaSetForRange } from "../lib/replicaPlacement";
 
 interface RepairViewProps {
   cluster: Cluster;
@@ -10,28 +11,42 @@ interface RepairViewProps {
 
 const TREE_DEPTH = 2;
 
-function findMismatchedLeafRanges(trees: Map<string, MerkleNode>): Array<[number, number]> {
-  const nodes = Array.from(trees.values());
-  if (nodes.length === 0) return [];
-  const leavesPerNode = nodes.map((tree) => {
-    const leaves: MerkleNode[] = [];
-    const walk = (n: MerkleNode) => {
-      if (!n.children || n.children.length === 0) {
-        leaves.push(n);
-        return;
-      }
-      n.children.forEach(walk);
-    };
-    walk(tree);
-    return leaves;
-  });
+function collectLeaves(tree: MerkleNode): MerkleNode[] {
+  const leaves: MerkleNode[] = [];
+  const walk = (n: MerkleNode) => {
+    if (!n.children || n.children.length === 0) {
+      leaves.push(n);
+      return;
+    }
+    n.children.forEach(walk);
+  };
+  walk(tree);
+  return leaves;
+}
 
-  const rangeCount = leavesPerNode[0]?.length ?? 0;
+function findMismatchedLeafRanges(
+  trees: Map<string, MerkleNode>,
+  rf: number,
+  nodes: Node[],
+  tokenRange: [number, number]
+): Array<[number, number]> {
+  const firstTree = Array.from(trees.values())[0];
+  if (!firstTree) return [];
+
   const mismatched: Array<[number, number]> = [];
-  for (let i = 0; i < rangeCount; i++) {
-    const hashes = new Set(leavesPerNode.map((leaves) => leaves[i]?.hash));
+  for (const leaf of collectLeaves(firstTree)) {
+    const replicaIds = getConsistentReplicaSetForRange(leaf.range, rf, nodes, tokenRange);
+    if (!replicaIds || replicaIds.length < 2) continue;
+
+    const hashes = new Set(
+      replicaIds.map((id) => {
+        const tree = trees.get(id);
+        const matchedLeaf = tree ? findLeafForRange(tree, leaf.range) : null;
+        return matchedLeaf?.hash;
+      })
+    );
     if (hashes.size > 1) {
-      mismatched.push(leavesPerNode[0][i].range);
+      mismatched.push(leaf.range);
     }
   }
   return mismatched;
@@ -113,7 +128,9 @@ export function RepairView({ cluster, dispatch }: RepairViewProps) {
     trees.set(node.id, buildMerkleTree(merged, cluster.tokenRange, TREE_DEPTH));
   }
 
-  const mismatchedRanges = findMismatchedLeafRanges(trees);
+  const activeKeyspace = cluster.keyspaces.find((k) => k.id === cluster.activeKeyspaceId);
+  const rf = activeKeyspace?.replicationFactor ?? 1;
+  const mismatchedRanges = findMismatchedLeafRanges(trees, rf, cluster.nodes, cluster.tokenRange);
   const repairingNodeId = cluster.animation.repairingNodeId;
 
   return (

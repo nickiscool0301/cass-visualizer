@@ -73,9 +73,45 @@ describe("clusterReducer repair actions", () => {
     }
 
     expect(state.events.some((e) => e.message === "Repair started")).toBe(true);
-    expect(state.events.some((e) => e.message.includes("mismatching range"))).toBe(true);
+    expect(state.events.some((e) => e.message === "Repair: 1 mismatching range found")).toBe(true);
     expect(state.events.some((e) => e.message.match(/Repair: streamed \d+ row/s) && e.message.includes("to"))).toBe(true);
     expect(state.animation.repairingNodeId).not.toBeNull();
+  });
+
+  it("RUN_REPAIR restricts streaming to replica nodes for the active RF", () => {
+    let state = createInitialCluster();
+    const keyspace = state.keyspaces[0];
+
+    // RF=2 so only two nodes hold each partition.
+    state = clusterReducer(state, {
+      type: "SET_REPLICATION_FACTOR",
+      keyspaceId: keyspace.id,
+      replicationFactor: 2,
+    });
+
+    // "a" hashes to token 97, owned by node-1. With RF=2 its replicas are node-1 and node-2.
+    const owner = state.nodes.find((n) => n.name === "node-1")!;
+    state = clusterReducer(state, {
+      type: "WRITE_TO_NODE",
+      nodeId: owner.id,
+      partitionKey: "a",
+      value: "alice",
+    });
+
+    state = clusterReducer(state, { type: "RUN_REPAIR" });
+
+    const replicaIds = state.nodes
+      .filter((n) => n.storage.memtable.some((r) => r.partitionKey === "a" && r.value === "alice"))
+      .map((n) => n.id);
+
+    expect(replicaIds).toContain(owner.id);
+    expect(replicaIds).toHaveLength(2);
+
+    const nonReplica = state.nodes.find((n) => !replicaIds.includes(n.id))!;
+    const hasRow =
+      nonReplica.storage.memtable.some((r) => r.partitionKey === "a") ||
+      nonReplica.storage.sstables.some((s) => s.rows.some((r) => r.partitionKey === "a"));
+    expect(hasRow).toBe(false);
   });
 
   it("RUN_REPAIR reports no replica pairs when RF is 1", () => {

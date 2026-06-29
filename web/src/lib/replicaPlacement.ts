@@ -45,6 +45,34 @@ export function getReplicaNodeIds(
   return replicas;
 }
 
+export function getConsistentReplicaSetForRange(
+  range: [number, number],
+  rf: number,
+  nodes: Node[],
+  tokenRange: [number, number]
+): string[] | null {
+  const [min, max] = tokenRange;
+  const span = max - min + 1;
+  const [start, end] = range;
+  const rangeSize = start <= end ? end - start + 1 : span - (start - end - 1);
+
+  let first: string[] | null = null;
+  for (let i = 0; i < rangeSize; i++) {
+    const token = min + ((start - min + i) % span);
+    const replicas = getReplicaNodeIds(token, rf, nodes);
+    if (first === null) {
+      first = replicas;
+    } else if (
+      replicas.length !== first.length ||
+      replicas.some((id, index) => id !== first![index])
+    ) {
+      return null;
+    }
+  }
+
+  return first ?? [];
+}
+
 export function getNodeOwnedRanges(
   nodeId: string,
   nodes: Node[],
