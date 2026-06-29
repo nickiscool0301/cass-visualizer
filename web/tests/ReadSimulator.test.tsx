@@ -30,7 +30,9 @@ describe("ReadSimulator", () => {
     render(<ReadSimulator cluster={cluster} dispatch={dispatch} />);
 
     fireEvent.change(screen.getByPlaceholderText("Partition key"), { target: { value: "user-1" } });
-    fireEvent.click(screen.getByRole("button", { name: /execute read repair/i }));
+    const repairButton = screen.getByRole("button", { name: /execute read repair/i });
+    expect(repairButton).toBeVisible();
+    fireEvent.click(repairButton);
 
     expect(dispatch).toHaveBeenCalledWith({ type: "EXECUTE_READ_REPAIR", partitionKey: "user-1" });
   });

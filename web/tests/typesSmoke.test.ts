@@ -28,7 +28,7 @@ describe("type smoke test", () => {
       selectedNodeId: null,
       activeKeyspaceId: "ks1",
       activeTab: "topology",
-      animation: { writeTargetNodeId: null, flushedNodeId: null, joiningNodeId: null, compactedNodeId: null, repairingNodeId: null, lastWriteAction: null, readCoordinatorNodeId: null, readRepairTargetNodeId: null },
+      animation: { writeTargetNodeId: null, flushedNodeId: null, joiningNodeId: null, compactedNodeId: null, repairingNodeId: null, lastWriteAction: null, readCoordinatorNodeId: null, readRepairTargetNodeIds: [] },
       gcGraceSeconds: 10,
       lastReadResult: null,
     };

@@ -334,7 +334,7 @@ export function createInitialCluster(): Cluster {
     selectedNodeId: null,
     activeKeyspaceId: keyspace.id,
     activeTab: "topology",
-    animation: { writeTargetNodeId: null, flushedNodeId: null, joiningNodeId: null, compactedNodeId: null, repairingNodeId: null, lastWriteAction: null, readCoordinatorNodeId: null, readRepairTargetNodeId: null },
+    animation: { writeTargetNodeId: null, flushedNodeId: null, joiningNodeId: null, compactedNodeId: null, repairingNodeId: null, lastWriteAction: null, readCoordinatorNodeId: null, readRepairTargetNodeIds: [] },
     lastReadResult: null,
     gcGraceSeconds: 10,
   };
@@ -832,7 +832,7 @@ export function clusterReducer(state: Cluster, action: ClusterAction): Cluster {
         animation: {
           ...state.animation,
           readCoordinatorNodeId: coordinatorId,
-          readRepairTargetNodeId: null,
+          readRepairTargetNodeIds: [],
         },
       };
     }
@@ -879,7 +879,7 @@ export function clusterReducer(state: Cluster, action: ClusterAction): Cluster {
           animation: {
             ...state.animation,
             readCoordinatorNodeId: null,
-            readRepairTargetNodeId: null,
+            readRepairTargetNodeIds: [],
           },
         };
       }
@@ -894,7 +894,10 @@ export function clusterReducer(state: Cluster, action: ClusterAction): Cluster {
         return node;
       });
       const repairedNames = repairedIds.map((id) => state.nodes.find((n) => n.id === id)?.name ?? id);
-      const eventMessage = `Read repair resolved ${action.partitionKey} -> ${winner.value}; repaired ${repairedNames.join(", ")}`;
+      const eventMessage =
+        repairedIds.length === 0
+          ? `Read ${action.partitionKey}: all replicas consistent`
+          : `Read repair resolved ${action.partitionKey} -> ${winner.value}; repaired ${repairedNames.join(", ")}`;
       return {
         ...state,
         nodes,
@@ -908,13 +911,13 @@ export function clusterReducer(state: Cluster, action: ClusterAction): Cluster {
         animation: {
           ...state.animation,
           readCoordinatorNodeId: null,
-          readRepairTargetNodeId: repairedIds[0] ?? null,
+          readRepairTargetNodeIds: repairedIds,
         },
       };
     }
 
     case "CLEAR_ANIMATION": {
-      return { ...state, animation: { writeTargetNodeId: null, flushedNodeId: null, joiningNodeId: null, compactedNodeId: null, repairingNodeId: null, lastWriteAction: null, readCoordinatorNodeId: null, readRepairTargetNodeId: null } };
+      return { ...state, animation: { writeTargetNodeId: null, flushedNodeId: null, joiningNodeId: null, compactedNodeId: null, repairingNodeId: null, lastWriteAction: null, readCoordinatorNodeId: null, readRepairTargetNodeIds: [] } };
     }
 
     default:

@@ -60,7 +60,7 @@ export interface ClusterAnimation {
   repairingNodeId: string | null;
   lastWriteAction: "write" | "write_ttl" | "delete" | null;
   readCoordinatorNodeId: string | null;
-  readRepairTargetNodeId: string | null;
+  readRepairTargetNodeIds: string[];
 }
 
 export interface ReadRepairState {

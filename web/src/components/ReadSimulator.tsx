@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { Cluster } from "../types/cluster";
 import type { ClusterAction } from "../state/clusterReducer";
 
@@ -10,20 +10,6 @@ interface ReadSimulatorProps {
 export function ReadSimulator({ cluster, dispatch }: ReadSimulatorProps) {
   const [key, setKey] = useState("");
   const isAnimating = cluster.animation.readCoordinatorNodeId !== null;
-
-  useEffect(() => {
-    if (
-      cluster.animation.readCoordinatorNodeId === null &&
-      cluster.animation.readRepairTargetNodeId === null
-    )
-      return;
-
-    const timeoutId = setTimeout(() => {
-      dispatch({ type: "CLEAR_ANIMATION" });
-    }, 1600);
-
-    return () => clearTimeout(timeoutId);
-  }, [cluster.animation.readCoordinatorNodeId, cluster.animation.readRepairTargetNodeId, dispatch]);
 
   const handleRead = () => {
     const trimmedKey = key.trim();
@@ -78,7 +64,7 @@ export function ReadSimulator({ cluster, dispatch }: ReadSimulatorProps) {
           </p>
           <p>
             Digests:{" "}
-            <span style={{ color: result.digestMismatches.length === 0 ? "#22c55e" : "#ef4444" }}>
+            <span style={{ color: result.digestMismatches.length === 0 ? "var(--success)" : "var(--danger)" }}>
               {result.digestMismatches.length === 0 ? "matched" : "mismatch detected"}
             </span>
           </p>

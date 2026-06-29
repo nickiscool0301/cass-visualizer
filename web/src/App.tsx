@@ -21,7 +21,7 @@ function App() {
       cluster.animation.compactedNodeId === null &&
       cluster.animation.repairingNodeId === null &&
       cluster.animation.readCoordinatorNodeId === null &&
-      cluster.animation.readRepairTargetNodeId === null
+      cluster.animation.readRepairTargetNodeIds.length === 0
     )
       return;
     const timer = setTimeout(() => dispatch({ type: "CLEAR_ANIMATION" }), 1600);
@@ -31,7 +31,7 @@ function App() {
     cluster.animation.compactedNodeId,
     cluster.animation.repairingNodeId,
     cluster.animation.readCoordinatorNodeId,
-    cluster.animation.readRepairTargetNodeId,
+    cluster.animation.readRepairTargetNodeIds,
     dispatch,
   ]);
 

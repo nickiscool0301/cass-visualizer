@@ -43,7 +43,7 @@ describe("clusterReducer read repair actions", () => {
     staleNode.storage.memtable.push({
       partitionKey: "user-1",
       value: "bob",
-      timestamp: Date.now() + 1000,
+      timestamp: 999_999_999_999_999,
     });
 
     state = clusterReducer(state, { type: "READ", partitionKey: "user-1" });
@@ -81,7 +81,7 @@ describe("clusterReducer read repair actions", () => {
     tombstoneNode.storage.memtable.push({
       partitionKey: "user-1",
       value: "[TOMBSTONE]",
-      timestamp: Date.now() + 1000,
+      timestamp: 999_999_999_999_999,
       isTombstone: true,
     });
 
