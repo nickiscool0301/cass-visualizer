@@ -28,7 +28,7 @@ describe("type smoke test", () => {
       selectedNodeId: null,
       activeKeyspaceId: "ks1",
       activeTab: "topology",
-      animation: { writeTargetNodeId: null, flushedNodeId: null, joiningNodeId: null, compactedNodeId: null, lastWriteAction: null },
+      animation: { writeTargetNodeId: null, flushedNodeId: null, joiningNodeId: null, compactedNodeId: null, repairingNodeId: null, lastWriteAction: null },
       gcGraceSeconds: 10,
     };
     expect(cluster.nodes).toHaveLength(1);

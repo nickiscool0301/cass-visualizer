@@ -3,11 +3,13 @@ import type {
   ClusterEvent,
   CompactionStrategy,
   Keyspace,
+  MerkleNode,
   Node,
   NodeStorage,
   SSTable,
   StoredRow,
 } from "../types/cluster";
+import { buildMerkleTree, collectLeafRanges } from "../lib/merkleTree";
 import { getAllTokenPoints, getReplicaNodeIds } from "../lib/replicaPlacement";
 
 const palette = [
@@ -192,7 +194,30 @@ function expireTTLRows(storage: NodeStorage, currentTime: number): NodeStorage {
   return changed ? { ...storage, memtable: nextMemtable } : storage;
 }
 
-function mergeRows(rows: StoredRow[], gcGraceSeconds: number): StoredRow[] {
+function getRowsInRange(
+  rows: StoredRow[],
+  range: [number, number],
+  tokenRange: [number, number]
+): StoredRow[] {
+  const [start, end] = range;
+  return rows.filter((r) => {
+    const token = hashPartitionKey(r.partitionKey, tokenRange);
+    return token >= start && token <= end;
+  });
+}
+
+function latestByKey(rows: StoredRow[]): Map<string, StoredRow> {
+  const byKey = new Map<string, StoredRow>();
+  for (const row of rows) {
+    const existing = byKey.get(row.partitionKey);
+    if (!existing || row.timestamp > existing.timestamp) {
+      byKey.set(row.partitionKey, row);
+    }
+  }
+  return byKey;
+}
+
+export function mergeRows(rows: StoredRow[], gcGraceSeconds: number): StoredRow[] {
   const byKey = new Map<string, StoredRow>();
   for (const row of rows) {
     const existing = byKey.get(row.partitionKey);
@@ -308,7 +333,7 @@ export function createInitialCluster(): Cluster {
     selectedNodeId: null,
     activeKeyspaceId: keyspace.id,
     activeTab: "topology",
-    animation: { writeTargetNodeId: null, flushedNodeId: null, joiningNodeId: null, compactedNodeId: null, lastWriteAction: null },
+    animation: { writeTargetNodeId: null, flushedNodeId: null, joiningNodeId: null, compactedNodeId: null, repairingNodeId: null, lastWriteAction: null },
     gcGraceSeconds: 10,
   };
 }
@@ -324,13 +349,15 @@ export type ClusterAction =
   | { type: "RESET_CLUSTER" }
   | { type: "SELECT_NODE"; nodeId: string | null }
   | { type: "SET_ACTIVE_KEYSPACE"; keyspaceId: string }
-  | { type: "SET_ACTIVE_TAB"; tab: "topology" | "storage" | "compaction" | "knowledge" }
+  | { type: "SET_ACTIVE_TAB"; tab: "topology" | "storage" | "compaction" | "repair" | "knowledge" }
   | { type: "WRITE"; partitionKey: string; value: string }
+  | { type: "WRITE_TO_NODE"; nodeId: string; partitionKey: string; value: string }
   | { type: "WRITE_TTL"; partitionKey: string; value: string; ttlSeconds: number }
   | { type: "DELETE"; partitionKey: string }
   | { type: "TICK_TTL" }
   | { type: "SET_GC_GRACE_SECONDS"; seconds: number }
   | { type: "FLUSH_MEMTABLE"; nodeId: string }
+  | { type: "RUN_REPAIR" }
   | { type: "CLEAR_ANIMATION" };
 
 export function clusterReducer(state: Cluster, action: ClusterAction): Cluster {
@@ -519,6 +546,22 @@ export function clusterReducer(state: Cluster, action: ClusterAction): Cluster {
       };
     }
 
+    case "WRITE_TO_NODE": {
+      const target = state.nodes.find((n) => n.id === action.nodeId);
+      if (!target) return state;
+      const nodes = state.nodes.map((node) =>
+        node.id === action.nodeId
+          ? { ...node, storage: writeToNode(node.storage, action.partitionKey, action.value) }
+          : node
+      );
+      return {
+        ...state,
+        nodes,
+        events: addEvent(state.events, `Wrote ${action.partitionKey}=${action.value} to ${target.name} only`),
+        animation: { ...state.animation, writeTargetNodeId: target.id, lastWriteAction: "write" },
+      };
+    }
+
     case "WRITE_TTL": {
       const token = hashPartitionKey(action.partitionKey, state.tokenRange);
       const activeKeyspace = state.keyspaces.find((k) => k.id === state.activeKeyspaceId);
@@ -633,8 +676,103 @@ export function clusterReducer(state: Cluster, action: ClusterAction): Cluster {
       };
     }
 
+    case "RUN_REPAIR": {
+      const activeKeyspace = state.keyspaces.find((k) => k.id === state.activeKeyspaceId);
+      const rf = activeKeyspace?.replicationFactor ?? 1;
+
+      let events = addEvent(state.events, "Repair started");
+
+      if (state.nodes.length < 2 || rf < 2) {
+        return {
+          ...state,
+          events: addEvent(events, "Repair: no replica pairs to compare with current RF"),
+        };
+      }
+
+      const depth = 3;
+      const trees = new Map<string, MerkleNode>();
+      for (const node of state.nodes) {
+        const allRows = [...node.storage.memtable, ...node.storage.sstables.flatMap((s) => s.rows)];
+        const merged = mergeRows(allRows, state.gcGraceSeconds);
+        trees.set(node.id, buildMerkleTree(merged, state.tokenRange, depth));
+      }
+
+      const firstTree = trees.get(state.nodes[0].id);
+      const leafRanges = firstTree ? collectLeafRanges(firstTree) : [];
+
+      let mismatchCount = 0;
+      const streamedCountByNode = new Map<string, number>();
+      const nextNodes = state.nodes.map((node) => ({
+        ...node,
+        storage: { ...node.storage, memtable: [...node.storage.memtable] },
+      }));
+
+      for (const range of leafRanges) {
+        const replicaIds = getReplicaNodeIds(range[0], rf, state.nodes);
+        if (replicaIds.length < 2) continue;
+
+        const hashes = new Set(replicaIds.map((id) => trees.get(id)?.hash));
+        if (hashes.size <= 1) continue;
+
+        mismatchCount++;
+
+        let allReplicaRows: StoredRow[] = [];
+        for (const id of replicaIds) {
+          const node = state.nodes.find((n) => n.id === id)!;
+          const allRows = [...node.storage.memtable, ...node.storage.sstables.flatMap((s) => s.rows)];
+          allReplicaRows.push(...getRowsInRange(allRows, range, state.tokenRange));
+        }
+
+        const authoritative = latestByKey(mergeRows(allReplicaRows, state.gcGraceSeconds));
+
+        for (const targetId of replicaIds) {
+          const targetNode = nextNodes.find((n) => n.id === targetId)!;
+          const targetRows = [...targetNode.storage.memtable, ...targetNode.storage.sstables.flatMap((s) => s.rows)];
+          const targetByKey = latestByKey(getRowsInRange(targetRows, range, state.tokenRange));
+
+          let streamed = 0;
+          for (const [key, authRow] of authoritative) {
+            const targetRow = targetByKey.get(key);
+            if (!targetRow || targetRow.timestamp < authRow.timestamp || targetRow.value !== authRow.value) {
+              targetNode.storage.memtable.push(authRow);
+              streamed++;
+            }
+          }
+          if (streamed > 0) {
+            streamedCountByNode.set(targetId, (streamedCountByNode.get(targetId) ?? 0) + streamed);
+          }
+        }
+      }
+
+      events = addEvent(
+        events,
+        `Repair: ${mismatchCount} mismatching range${mismatchCount === 1 ? "" : "s"} found`
+      );
+
+      let repairingNodeId: string | null = null;
+      for (const [nodeId, count] of streamedCountByNode) {
+        const node = state.nodes.find((n) => n.id === nodeId)!;
+        events = addEvent(
+          events,
+          `Repair: streamed ${count} row${count === 1 ? "" : "s"} to ${node.name}`
+        );
+        repairingNodeId = nodeId;
+      }
+
+      if (streamedCountByNode.size === 0) {
+        events = addEvent(events, "Repair: no rows needed streaming");
+      }
+
+      return {
+        ...state,
+        nodes: nextNodes,
+        events,
+        animation: { ...state.animation, repairingNodeId },
+      };
+    }
+
     case "CLEAR_ANIMATION": {
-      return { ...state, animation: { writeTargetNodeId: null, flushedNodeId: null, joiningNodeId: null, compactedNodeId: null, lastWriteAction: null } };
+      return { ...state, animation: { writeTargetNodeId: null, flushedNodeId: null, joiningNodeId: null, compactedNodeId: null, repairingNodeId: null, lastWriteAction: null } };
     }
 
     default:

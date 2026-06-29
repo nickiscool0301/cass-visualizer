@@ -8,16 +8,22 @@ import { EventLog } from "./components/EventLog";
 import { StorageView } from "./components/StorageView";
 import { WriteSimulator } from "./components/WriteSimulator";
 import { CompactionView } from "./components/CompactionView";
+import { RepairView } from "./components/RepairView";
 import { KnowledgeView } from "./components/KnowledgeView";
 
 function App() {
   const { cluster, dispatch } = useCluster();
 
   useEffect(() => {
-    if (cluster.animation.joiningNodeId === null && cluster.animation.compactedNodeId === null) return;
+    if (
+      cluster.animation.joiningNodeId === null &&
+      cluster.animation.compactedNodeId === null &&
+      cluster.animation.repairingNodeId === null
+    )
+      return;
     const timer = setTimeout(() => dispatch({ type: "CLEAR_ANIMATION" }), 1600);
     return () => clearTimeout(timer);
-  }, [cluster.animation.joiningNodeId, cluster.animation.compactedNodeId, dispatch]);
+  }, [cluster.animation.joiningNodeId, cluster.animation.compactedNodeId, cluster.animation.repairingNodeId, dispatch]);
 
   return (
     <div className="flex h-screen overflow-hidden text-sm" style={{ backgroundColor: "var(--bg-primary)", color: "var(--text-primary)" }}>
@@ -37,6 +43,7 @@ function App() {
             )}
             {cluster.activeTab === "storage" && <StorageView cluster={cluster} dispatch={dispatch} />}
             {cluster.activeTab === "compaction" && <CompactionView cluster={cluster} dispatch={dispatch} />}
+            {cluster.activeTab === "repair" && <RepairView cluster={cluster} dispatch={dispatch} />}
             {cluster.activeTab === "knowledge" && <KnowledgeView />}
           </section>
         </div>

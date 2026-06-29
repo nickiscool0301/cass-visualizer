@@ -11,6 +11,7 @@ const titles: Record<CanvasToolbarProps["cluster"]["activeTab"], string> = {
   topology: "Topology",
   storage: "Storage Engine",
   compaction: "Compaction",
+  repair: "Anti-Entropy Repair",
   knowledge: "Knowledge Base",
 };
 
@@ -18,6 +19,9 @@ export function CanvasToolbar({ cluster, dispatch }: CanvasToolbarProps) {
   const [newKeyspaceName, setNewKeyspaceName] = useState("");
   const [newKeyspaceRf, setNewKeyspaceRf] = useState(1);
   const [newCompactionStrategy, setNewCompactionStrategy] = useState<CompactionStrategy>("STCS");
+  const [targetNodeId, setTargetNodeId] = useState(cluster.nodes[0]?.id ?? "");
+  const [directKey, setDirectKey] = useState("");
+  const [directValue, setDirectValue] = useState("");
 
   const activeKeyspace = cluster.keyspaces.find((k) => k.id === cluster.activeKeyspaceId);
   const trimmedName = newKeyspaceName.trim();
@@ -164,6 +168,55 @@ export function CanvasToolbar({ cluster, dispatch }: CanvasToolbarProps) {
               Add
             </button>
             {duplicateName && <span style={{ color: "var(--warning)" }}>Name exists</span>}
+          </div>
+        )}
+
+        {cluster.activeTab === "repair" && (
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              type="text"
+              placeholder="Key"
+              value={directKey}
+              onChange={(e) => setDirectKey(e.target.value)}
+              className="input w-28 py-1.5 text-xs"
+            />
+            <input
+              type="text"
+              placeholder="Value"
+              value={directValue}
+              onChange={(e) => setDirectValue(e.target.value)}
+              className="input w-28 py-1.5 text-xs"
+            />
+            <select
+              value={targetNodeId}
+              onChange={(e) => setTargetNodeId(e.target.value)}
+              className="input py-1.5 text-xs"
+            >
+              {cluster.nodes.map((node) => (
+                <option key={node.id} value={node.id}>
+                  {node.name}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={() => {
+                const trimmedKey = directKey.trim();
+                const trimmedValue = directValue.trim();
+                if (!trimmedKey || !trimmedValue || !targetNodeId) return;
+                dispatch({
+                  type: "WRITE_TO_NODE",
+                  nodeId: targetNodeId,
+                  partitionKey: trimmedKey,
+                  value: trimmedValue,
+                });
+                setDirectKey("");
+                setDirectValue("");
+              }}
+              disabled={!directKey.trim() || !directValue.trim() || !targetNodeId}
+              className="btn-ghost py-1.5 text-xs disabled:opacity-40"
+            >
+              Write to this node only
+            </button>
           </div>
         )}
       </div>

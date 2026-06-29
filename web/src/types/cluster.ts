@@ -9,6 +9,12 @@ export interface StoredRow {
   expiresAt?: number;
 }
 
+export interface MerkleNode {
+  hash: string;
+  range: [number, number];
+  children?: MerkleNode[];
+}
+
 export interface SSTable {
   id: string;
   rows: StoredRow[];
@@ -51,6 +57,7 @@ export interface ClusterAnimation {
   flushedNodeId: string | null;
   joiningNodeId: string | null;
   compactedNodeId: string | null;
+  repairingNodeId: string | null;
   lastWriteAction: "write" | "write_ttl" | "delete" | null;
 }
 
@@ -63,7 +70,7 @@ export interface Cluster {
   events: ClusterEvent[];
   selectedNodeId: string | null;
   activeKeyspaceId: string | null;
-  activeTab: "topology" | "storage" | "compaction" | "knowledge";
+  activeTab: "topology" | "storage" | "compaction" | "repair" | "knowledge";
   animation: ClusterAnimation;
   gcGraceSeconds: number;
 }
