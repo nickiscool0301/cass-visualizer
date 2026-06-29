@@ -17,12 +17,14 @@ function formatTTLCountdown(row: StoredRow): string | null {
 
 function NodeStorageCard({
   node,
+  cluster,
   isWriteTarget,
   isFlushed,
   onFlush,
   onInspectSSTable,
 }: {
   node: Node;
+  cluster: Cluster;
   isWriteTarget: boolean;
   isFlushed: boolean;
   onFlush: () => void;
@@ -141,6 +143,32 @@ function NodeStorageCard({
         )}
       </div>
 
+      <div className="mt-3">
+        <h4 className="text-[10px] font-bold uppercase tracking-wide" style={{ color: "var(--text-tertiary)" }}>
+          Hints ({node.storage.hints.length})
+        </h4>
+        {node.storage.hints.length === 0 ? (
+          <p
+            className="mt-1 rounded border p-1.5 text-[11px]"
+            style={{ backgroundColor: "var(--bg-primary)", color: "var(--text-tertiary)", borderColor: "var(--border)" }}
+          >
+            None
+          </p>
+        ) : (
+          <ul className="mt-1 max-h-20 space-y-0.5 overflow-y-auto rounded border p-1.5 text-[11px]" style={{ backgroundColor: "var(--bg-primary)", borderColor: "var(--border)" }}>
+            {node.storage.hints.map((hint) => (
+              <li key={hint.id} style={{ color: "var(--text-secondary)" }}>
+                <span className="font-semibold" style={{ color: "var(--accent)" }}>{hint.partitionKey}</span>
+                {" "}
+                <span style={{ color: "var(--text-tertiary)" }}>→</span>
+                {" "}
+                {hint.targetNodeId === node.id ? "local replay" : cluster.nodes.find((n) => n.id === hint.targetNodeId)?.name ?? hint.targetNodeId}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
       <button
         onClick={onFlush}
         disabled={node.storage.memtable.length === 0}
@@ -172,6 +200,7 @@ export function StorageView({ cluster, dispatch }: StorageViewProps) {
           <NodeStorageCard
             key={node.id}
             node={node}
+            cluster={cluster}
             isWriteTarget={writeTargetNodeId === node.id}
             isFlushed={flushedNodeId === node.id}
             onFlush={() => dispatch({ type: "FLUSH_MEMTABLE", nodeId: node.id })}

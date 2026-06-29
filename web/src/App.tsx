@@ -48,6 +48,7 @@ function App() {
               <TokenRing
                 cluster={cluster}
                 onSelectNode={(id) => dispatch({ type: "SELECT_NODE", nodeId: id })}
+                onToggleNodeStatus={(id) => dispatch({ type: "TOGGLE_NODE_STATUS", nodeId: id })}
                 highlightedNodeId={cluster.selectedNodeId}
               />
             )}

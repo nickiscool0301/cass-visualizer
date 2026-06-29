@@ -71,6 +71,20 @@ export function CanvasToolbar({ cluster, dispatch }: CanvasToolbarProps) {
             >
               Remove
             </button>
+            <button
+              onClick={() => {
+                if (cluster.selectedNodeId) {
+                  dispatch({ type: "BRING_NODE_ONLINE", nodeId: cluster.selectedNodeId });
+                }
+              }}
+              disabled={
+                !cluster.selectedNodeId ||
+                cluster.nodes.find((n) => n.id === cluster.selectedNodeId)?.status !== "down"
+              }
+              className="btn-ghost py-1.5 text-xs disabled:opacity-40"
+            >
+              Bring online & replay hints
+            </button>
           </div>
         )}
 

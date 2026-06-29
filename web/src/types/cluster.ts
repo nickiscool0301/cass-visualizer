@@ -9,6 +9,15 @@ export interface StoredRow {
   expiresAt?: number;
 }
 
+export interface Hint {
+  id: string;
+  targetNodeId: string;
+  partitionKey: string;
+  value: string;
+  timestamp: number;
+  isTombstone: boolean;
+}
+
 export interface MerkleNode {
   hash: string;
   range: [number, number];
@@ -26,6 +35,7 @@ export interface NodeStorage {
   commitLog: StoredRow[];
   memtable: StoredRow[];
   sstables: SSTable[];
+  hints: Hint[];
 }
 
 export interface Node {

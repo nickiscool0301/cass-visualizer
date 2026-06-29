@@ -7,10 +7,11 @@ import { getReplicaNodeIds } from "../lib/replicaPlacement";
 interface TokenRingProps {
   cluster: Cluster;
   onSelectNode: (nodeId: string | null) => void;
+  onToggleNodeStatus?: (nodeId: string) => void;
   highlightedNodeId: string | null;
 }
 
-export function TokenRing({ cluster, onSelectNode, highlightedNodeId }: TokenRingProps) {
+export function TokenRing({ cluster, onSelectNode, onToggleNodeStatus, highlightedNodeId }: TokenRingProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState(320);
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
@@ -64,10 +65,12 @@ export function TokenRing({ cluster, onSelectNode, highlightedNodeId }: TokenRin
       >
       <g transform={`translate(${dims.centerX}, ${dims.centerY})`}>
         {arcs.map((arc, i) => {
+          const node = cluster.nodes.find((n) => n.id === arc.nodeId);
           const isHighlighted = highlightedNodeId === arc.nodeId || hoveredNodeId === arc.nodeId;
           const isJoining = cluster.animation.joiningNodeId === arc.nodeId;
-          const opacity = (highlightedNodeId || hoveredNodeId) && !isHighlighted ? 0.3 : 1;
-          const ownerName = cluster.nodes.find((n) => n.id === arc.nodeId)?.name ?? arc.nodeId;
+          const isDown = node?.status === "down";
+          const opacity = isHighlighted ? 1 : isDown ? 0.35 : (highlightedNodeId || hoveredNodeId) && !isHighlighted ? 0.3 : 1;
+          const ownerName = node?.name ?? arc.nodeId;
           const midpoint = arc.startToken;
           const replicas = getReplicaNodeIds(midpoint, rf, cluster.nodes);
           const replicaNames = replicas.map((id) => cluster.nodes.find((n) => n.id === id)?.name ?? id);
@@ -102,6 +105,7 @@ export function TokenRing({ cluster, onSelectNode, highlightedNodeId }: TokenRin
         {cluster.nodes.map((node) => {
           const tokenAngles = node.tokens.map((t) => tokenToAngle(t, cluster.tokenRange) - Math.PI / 2);
           const nodeHighlighted = highlightedNodeId === node.id || hoveredNodeId === node.id;
+          const isDown = node.status === "down";
           return tokenAngles.map((angle, i) => {
             const x = Math.cos(angle) * dims.radius;
             const y = Math.sin(angle) * dims.radius;
@@ -111,9 +115,17 @@ export function TokenRing({ cluster, onSelectNode, highlightedNodeId }: TokenRin
                 cx={x}
                 cy={y}
                 r={nodeHighlighted ? 5 : 3}
-                fill="#fff"
-                className="transition-all duration-300"
-              />
+                fill={isDown ? "#9ca3af" : "#fff"}
+                stroke={isDown ? "#ef4444" : "#9ca3af"}
+                strokeWidth={1}
+                className="cursor-pointer transition-all duration-300"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onToggleNodeStatus?.(node.id);
+                }}
+              >
+                <title>{`${node.name}: click to toggle status (${node.status})`}</title>
+              </circle>
             );
           });
         })}

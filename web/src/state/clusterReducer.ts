@@ -2,9 +2,11 @@ import type {
   Cluster,
   ClusterEvent,
   CompactionStrategy,
+  Hint,
   Keyspace,
   MerkleNode,
   Node,
+  NodeStatus,
   NodeStorage,
   SSTable,
   StoredRow,
@@ -71,7 +73,7 @@ function allocateColor(nodes: Node[]): string {
 }
 
 function createEmptyStorage(): NodeStorage {
-  return { commitLog: [], memtable: [], sstables: [] };
+  return { commitLog: [], memtable: [], sstables: [], hints: [] };
 }
 
 function rangeSize(start: number, end: number, tokenRange: [number, number]): number {
@@ -126,6 +128,7 @@ function flushMemtable(storage: NodeStorage): NodeStorage {
     level: 0,
   };
   return {
+    ...storage,
     commitLog: [],
     memtable: [],
     sstables: [newSstable, ...storage.sstables],
@@ -136,13 +139,14 @@ function writeToNode(
   storage: NodeStorage,
   partitionKey: string,
   value: string,
-  ttlSeconds?: number
+  ttlSeconds?: number,
+  timestamp?: number
 ): NodeStorage {
-  const timestamp = now();
-  const row: StoredRow = { partitionKey, value, timestamp };
+  const rowTimestamp = timestamp ?? now();
+  const row: StoredRow = { partitionKey, value, timestamp: rowTimestamp };
   if (ttlSeconds !== undefined) {
     row.ttl = ttlSeconds;
-    row.expiresAt = timestamp + ttlSeconds * 1000;
+    row.expiresAt = rowTimestamp + ttlSeconds * 1000;
   }
   const nextCommitLog = [row, ...storage.commitLog];
   const nextMemtable = [row, ...storage.memtable];
@@ -154,11 +158,11 @@ function writeToNode(
   return { ...storage, commitLog: nextCommitLog, memtable: nextMemtable };
 }
 
-function deleteToNode(storage: NodeStorage, partitionKey: string): NodeStorage {
+function deleteToNode(storage: NodeStorage, partitionKey: string, timestamp?: number): NodeStorage {
   const row: StoredRow = {
     partitionKey,
     value: "[TOMBSTONE]",
-    timestamp: now(),
+    timestamp: timestamp ?? now(),
     isTombstone: true,
   };
   const nextCommitLog = [row, ...storage.commitLog];
@@ -179,6 +183,47 @@ function writeRowToNode(storage: NodeStorage, row: StoredRow): NodeStorage {
     return flushMemtable({ ...storage, commitLog: nextCommitLog, memtable: nextMemtable });
   }
   return { ...storage, commitLog: nextCommitLog, memtable: nextMemtable };
+}
+
+function replayHintsForNode(
+  nodes: Node[],
+  targetNodeId: string
+): { nodes: Node[]; replayCount: number } {
+  const rowsToReplay: StoredRow[] = [];
+  const nextNodes = nodes.map((node) => {
+    const remaining: Hint[] = [];
+    for (const hint of node.storage.hints) {
+      if (hint.targetNodeId === targetNodeId) {
+        rowsToReplay.push({
+          partitionKey: hint.partitionKey,
+          value: hint.value,
+          timestamp: hint.timestamp,
+          isTombstone: hint.isTombstone,
+        });
+      } else {
+        remaining.push(hint);
+      }
+    }
+    if (remaining.length !== node.storage.hints.length) {
+      return { ...node, storage: { ...node.storage, hints: remaining } };
+    }
+    return node;
+  });
+
+  if (rowsToReplay.length === 0) {
+    return { nodes: nextNodes, replayCount: 0 };
+  }
+
+  const finalNodes = nextNodes.map((node) => {
+    if (node.id !== targetNodeId) return node;
+    let storage = node.storage;
+    for (const row of rowsToReplay) {
+      storage = writeRowToNode(storage, row);
+    }
+    return { ...node, storage };
+  });
+
+  return { nodes: finalNodes, replayCount: rowsToReplay.length };
 }
 
 function findLatestRow(storage: NodeStorage, partitionKey: string): StoredRow | undefined {
@@ -362,7 +407,10 @@ export type ClusterAction =
   | { type: "RUN_REPAIR" }
   | { type: "READ"; partitionKey: string }
   | { type: "EXECUTE_READ_REPAIR"; partitionKey: string }
-  | { type: "CLEAR_ANIMATION" };
+  | { type: "CLEAR_ANIMATION" }
+  | { type: "TOGGLE_NODE_STATUS"; nodeId: string }
+  | { type: "BRING_NODE_ONLINE"; nodeId: string }
+  | { type: "SEND_HINTS"; nodeId: string };
 
 export function clusterReducer(state: Cluster, action: ClusterAction): Cluster {
   switch (action.type) {
@@ -526,27 +574,50 @@ export function clusterReducer(state: Cluster, action: ClusterAction): Cluster {
           events: addEvent(state.events, "No replicas available for write"),
         };
       }
+      const liveReplicaIds = replicaIds.filter((id) => state.nodes.find((n) => n.id === id)!.status === "up");
+      const downReplicaIds = replicaIds.filter((id) => !liveReplicaIds.includes(id));
+      const coordinatorId = liveReplicaIds[0] ?? state.nodes.find((n) => n.status === "up")?.id;
+      if (!coordinatorId) {
+        return { ...state, events: addEvent(state.events, "No live coordinator available for write") };
+      }
+      const timestamp = now();
+      const hints: Hint[] = downReplicaIds.map((targetId) => ({
+        id: generateId("hint"),
+        targetNodeId: targetId,
+        partitionKey: action.partitionKey,
+        value: action.value,
+        timestamp,
+        isTombstone: false,
+      }));
       const nodes = state.nodes.map((node) => {
-        if (!replicaIds.includes(node.id)) return node;
-        return {
-          ...node,
-          storage: writeToNode(node.storage, action.partitionKey, action.value),
-        };
+        let storage = node.storage;
+        if (liveReplicaIds.includes(node.id)) {
+          storage = writeToNode(storage, action.partitionKey, action.value, undefined, timestamp);
+        }
+        if (node.id === coordinatorId) {
+          storage = { ...storage, hints: [...storage.hints, ...hints] };
+        }
+        return { ...node, storage };
       });
       const flushed = nodes.some(
         (n) =>
-          replicaIds.includes(n.id) &&
+          liveReplicaIds.includes(n.id) &&
           state.nodes.find((prev) => prev.id === n.id)!.storage.memtable.length >= 4 &&
           n.storage.memtable.length === 0
       );
       const message = flushed
         ? `Write to ${replicaIds.length} replica(s); memtable flushed to SSTable`
         : `Write to ${replicaIds.length} replica(s) at token ${token}`;
+      let events = addEvent(state.events, message);
+      for (let i = downReplicaIds.length - 1; i >= 0; i--) {
+        const downNode = state.nodes.find((n) => n.id === downReplicaIds[i])!;
+        events = addEvent(events, `Stored hint for ${downNode.name}`);
+      }
       return {
         ...state,
         nodes,
-        events: addEvent(state.events, message),
-        animation: { ...state.animation, writeTargetNodeId: replicaIds[0] ?? null, flushedNodeId: flushed ? replicaIds[0] ?? null : null, lastWriteAction: "write" },
+        events,
+        animation: { ...state.animation, writeTargetNodeId: coordinatorId, flushedNodeId: flushed ? coordinatorId : null, lastWriteAction: "write" },
       };
     }
 
@@ -577,27 +648,50 @@ export function clusterReducer(state: Cluster, action: ClusterAction): Cluster {
           events: addEvent(state.events, "No replicas available for TTL write"),
         };
       }
+      const liveReplicaIds = replicaIds.filter((id) => state.nodes.find((n) => n.id === id)!.status === "up");
+      const downReplicaIds = replicaIds.filter((id) => !liveReplicaIds.includes(id));
+      const coordinatorId = liveReplicaIds[0] ?? state.nodes.find((n) => n.status === "up")?.id;
+      if (!coordinatorId) {
+        return { ...state, events: addEvent(state.events, "No live coordinator available for TTL write") };
+      }
+      const timestamp = now();
+      const hints: Hint[] = downReplicaIds.map((targetId) => ({
+        id: generateId("hint"),
+        targetNodeId: targetId,
+        partitionKey: action.partitionKey,
+        value: action.value,
+        timestamp,
+        isTombstone: false,
+      }));
       const nodes = state.nodes.map((node) => {
-        if (!replicaIds.includes(node.id)) return node;
-        return {
-          ...node,
-          storage: writeToNode(node.storage, action.partitionKey, action.value, action.ttlSeconds),
-        };
+        let storage = node.storage;
+        if (liveReplicaIds.includes(node.id)) {
+          storage = writeToNode(storage, action.partitionKey, action.value, action.ttlSeconds, timestamp);
+        }
+        if (node.id === coordinatorId) {
+          storage = { ...storage, hints: [...storage.hints, ...hints] };
+        }
+        return { ...node, storage };
       });
       const flushed = nodes.some(
         (n) =>
-          replicaIds.includes(n.id) &&
+          liveReplicaIds.includes(n.id) &&
           state.nodes.find((prev) => prev.id === n.id)!.storage.memtable.length >= 4 &&
           n.storage.memtable.length === 0
       );
       const message = flushed
         ? `Wrote ${action.partitionKey} with TTL ${action.ttlSeconds}s on ${replicaIds.length} replica(s); memtable flushed`
         : `Wrote ${action.partitionKey} with TTL ${action.ttlSeconds}s on ${replicaIds.length} replica(s)`;
+      let events = addEvent(state.events, message);
+      for (let i = downReplicaIds.length - 1; i >= 0; i--) {
+        const downNode = state.nodes.find((n) => n.id === downReplicaIds[i])!;
+        events = addEvent(events, `Stored hint for ${downNode.name}`);
+      }
       return {
         ...state,
         nodes,
-        events: addEvent(state.events, message),
-        animation: { ...state.animation, writeTargetNodeId: replicaIds[0] ?? null, flushedNodeId: flushed ? replicaIds[0] ?? null : null, lastWriteAction: "write_ttl" },
+        events,
+        animation: { ...state.animation, writeTargetNodeId: coordinatorId, flushedNodeId: flushed ? coordinatorId : null, lastWriteAction: "write_ttl" },
       };
     }
 
@@ -612,27 +706,50 @@ export function clusterReducer(state: Cluster, action: ClusterAction): Cluster {
           events: addEvent(state.events, "No replicas available for delete"),
         };
       }
+      const liveReplicaIds = replicaIds.filter((id) => state.nodes.find((n) => n.id === id)!.status === "up");
+      const downReplicaIds = replicaIds.filter((id) => !liveReplicaIds.includes(id));
+      const coordinatorId = liveReplicaIds[0] ?? state.nodes.find((n) => n.status === "up")?.id;
+      if (!coordinatorId) {
+        return { ...state, events: addEvent(state.events, "No live coordinator available for delete") };
+      }
+      const timestamp = now();
+      const hints: Hint[] = downReplicaIds.map((targetId) => ({
+        id: generateId("hint"),
+        targetNodeId: targetId,
+        partitionKey: action.partitionKey,
+        value: "[TOMBSTONE]",
+        timestamp,
+        isTombstone: true,
+      }));
       const nodes = state.nodes.map((node) => {
-        if (!replicaIds.includes(node.id)) return node;
-        return {
-          ...node,
-          storage: deleteToNode(node.storage, action.partitionKey),
-        };
+        let storage = node.storage;
+        if (liveReplicaIds.includes(node.id)) {
+          storage = deleteToNode(storage, action.partitionKey, timestamp);
+        }
+        if (node.id === coordinatorId) {
+          storage = { ...storage, hints: [...storage.hints, ...hints] };
+        }
+        return { ...node, storage };
       });
       const flushed = nodes.some(
         (n) =>
-          replicaIds.includes(n.id) &&
+          liveReplicaIds.includes(n.id) &&
           state.nodes.find((prev) => prev.id === n.id)!.storage.memtable.length >= 4 &&
           n.storage.memtable.length === 0
       );
       const message = flushed
         ? `Deleted ${action.partitionKey} on ${replicaIds.length} replica(s); memtable flushed`
         : `Deleted ${action.partitionKey} on ${replicaIds.length} replica(s)`;
+      let events = addEvent(state.events, message);
+      for (let i = downReplicaIds.length - 1; i >= 0; i--) {
+        const downNode = state.nodes.find((n) => n.id === downReplicaIds[i])!;
+        events = addEvent(events, `Stored hint for ${downNode.name}`);
+      }
       return {
         ...state,
         nodes,
-        events: addEvent(state.events, message),
-        animation: { ...state.animation, writeTargetNodeId: replicaIds[0] ?? null, flushedNodeId: flushed ? replicaIds[0] ?? null : null, lastWriteAction: "delete" },
+        events,
+        animation: { ...state.animation, writeTargetNodeId: coordinatorId, flushedNodeId: flushed ? coordinatorId : null, lastWriteAction: "delete" },
       };
     }
 
@@ -918,6 +1035,69 @@ export function clusterReducer(state: Cluster, action: ClusterAction): Cluster {
 
     case "CLEAR_ANIMATION": {
       return { ...state, animation: { writeTargetNodeId: null, flushedNodeId: null, joiningNodeId: null, compactedNodeId: null, repairingNodeId: null, lastWriteAction: null, readCoordinatorNodeId: null, readRepairTargetNodeIds: [] } };
+    }
+
+    case "TOGGLE_NODE_STATUS": {
+      const target = state.nodes.find((n) => n.id === action.nodeId);
+      if (!target) return state;
+      const nextStatus: NodeStatus = target.status === "up" ? "down" : "up";
+      const nodes = state.nodes.map((n) =>
+        n.id === action.nodeId ? { ...n, status: nextStatus } : n
+      );
+      return {
+        ...state,
+        nodes,
+        events: addEvent(state.events, `${target.name} is now ${nextStatus}`),
+      };
+    }
+
+    case "BRING_NODE_ONLINE": {
+      const target = state.nodes.find((n) => n.id === action.nodeId);
+      if (!target) return state;
+      if (target.status === "up") {
+        return {
+          ...state,
+          events: addEvent(state.events, `${target.name} is already online`),
+        };
+      }
+      const upNodes = state.nodes.map((n) =>
+        n.id === action.nodeId ? { ...n, status: "up" as NodeStatus } : n
+      );
+      let events = addEvent(state.events, `${target.name} came online`);
+      const replayResult = replayHintsForNode(upNodes, action.nodeId);
+      if (replayResult.replayCount > 0) {
+        events = addEvent(
+          events,
+          `Replaying ${replayResult.replayCount} hint${replayResult.replayCount === 1 ? "" : "s"} to ${target.name}`
+        );
+      }
+      return {
+        ...state,
+        nodes: replayResult.nodes,
+        events,
+        animation: { ...state.animation, writeTargetNodeId: action.nodeId },
+      };
+    }
+
+    case "SEND_HINTS": {
+      const target = state.nodes.find((n) => n.id === action.nodeId);
+      if (!target) return state;
+      const replayResult = replayHintsForNode(state.nodes, action.nodeId);
+      let events = state.events;
+      if (replayResult.replayCount > 0) {
+        events = addEvent(
+          events,
+          `Replaying ${replayResult.replayCount} hint${replayResult.replayCount === 1 ? "" : "s"} to ${target.name}`
+        );
+      } else {
+        events = addEvent(events, `No hints to replay for ${target.name}`);
+      }
+      return {
+        ...state,
+        nodes: replayResult.nodes,
+        events,
+        animation: { ...state.animation, writeTargetNodeId: action.nodeId },
+      };
     }
 
     default:
