@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildMerkleTree, collectLeafRanges, hashString } from "../src/lib/merkleTree";
+import { buildMerkleTree, collectLeafRanges, findLeafForRange, hashPartitionKey, hashString } from "../src/lib/merkleTree";
 import type { StoredRow } from "../src/types/cluster";
 
 function row(partitionKey: string, value: string, timestamp: number): StoredRow {
@@ -64,6 +64,26 @@ describe("buildMerkleTree", () => {
     const leftHasRows = tree.children![0].hash !== buildMerkleTree([], [0, 499], 0).hash;
     const rightHasRows = tree.children![1].hash !== buildMerkleTree([], [500, 999], 0).hash;
     expect(leftHasRows || rightHasRows).toBe(true);
+  });
+
+  it("places rows using absolute tokens when subranges do not evenly divide", () => {
+    // Range [0, 6] has span 7. With depth 2 the leaves are [0,1], [2,3], [4,5], [6,6].
+    // A key whose absolute token is 5 must land in leaf [4,5], not [6,6].
+    const range: [number, number] = [0, 6];
+    let key = "k";
+    while (hashPartitionKey(key, range) !== 5) {
+      key += "k";
+    }
+
+    const rows = [row(key, "1", 100)];
+    const tree = buildMerkleTree(rows, range, 2);
+
+    const correctLeaf = findLeafForRange(tree, [4, 5]);
+    expect(correctLeaf).not.toBeNull();
+    expect(correctLeaf!.hash).not.toBe(buildMerkleTree([], [4, 5], 0).hash);
+
+    const wrongLeaf = findLeafForRange(tree, [6, 6]);
+    expect(wrongLeaf!.hash).toBe(buildMerkleTree([], [6, 6], 0).hash);
   });
 });
 

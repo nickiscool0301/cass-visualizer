@@ -9,7 +9,7 @@ import type {
   SSTable,
   StoredRow,
 } from "../types/cluster";
-import { buildMerkleTree, collectLeafRanges, findLeafForRange, hashPartitionKey } from "../lib/merkleTree";
+import { buildMerkleTree, collectLeafRanges, findLeafForRange, hashPartitionKey, REPAIR_MERKLE_DEPTH } from "../lib/merkleTree";
 import { getAllTokenPoints, getConsistentReplicaSetForRange, getReplicaNodeIds } from "../lib/replicaPlacement";
 
 const palette = [
@@ -193,17 +193,6 @@ function getRowsInRange(
     const token = hashPartitionKey(r.partitionKey, tokenRange);
     return token >= start && token <= end;
   });
-}
-
-function latestByKey(rows: StoredRow[]): Map<string, StoredRow> {
-  const byKey = new Map<string, StoredRow>();
-  for (const row of rows) {
-    const existing = byKey.get(row.partitionKey);
-    if (!existing || row.timestamp > existing.timestamp) {
-      byKey.set(row.partitionKey, row);
-    }
-  }
-  return byKey;
 }
 
 export function mergeRows(rows: StoredRow[], gcGraceSeconds: number): StoredRow[] {
@@ -678,12 +667,11 @@ export function clusterReducer(state: Cluster, action: ClusterAction): Cluster {
         };
       }
 
-      const depth = 3;
       const trees = new Map<string, MerkleNode>();
       for (const node of state.nodes) {
         const allRows = [...node.storage.memtable, ...node.storage.sstables.flatMap((s) => s.rows)];
         const merged = mergeRows(allRows, state.gcGraceSeconds);
-        trees.set(node.id, buildMerkleTree(merged, state.tokenRange, depth));
+        trees.set(node.id, buildMerkleTree(merged, state.tokenRange, REPAIR_MERKLE_DEPTH));
       }
 
       const firstTree = trees.get(state.nodes[0].id);
@@ -724,12 +712,17 @@ export function clusterReducer(state: Cluster, action: ClusterAction): Cluster {
         for (const targetId of replicaIds) {
           const targetNode = nextNodes.find((n) => n.id === targetId)!;
           const targetRows = [...targetNode.storage.memtable, ...targetNode.storage.sstables.flatMap((s) => s.rows)];
-          const targetByKey = latestByKey(getRowsInRange(targetRows, range, state.tokenRange));
+          const targetByKey = new Map(
+            mergeRows(getRowsInRange(targetRows, range, state.tokenRange), state.gcGraceSeconds).map((r) => [
+              r.partitionKey,
+              r,
+            ])
+          );
 
           let streamed = 0;
           for (const [key, authRow] of authoritative) {
             const targetRow = targetByKey.get(key);
-            if (!targetRow || targetRow.timestamp < authRow.timestamp || targetRow.value !== authRow.value) {
+            if (!targetRow || targetRow.value !== authRow.value) {
               targetNode.storage.memtable.push(authRow);
               streamed++;
             }

@@ -1,15 +1,13 @@
 import type { Cluster, MerkleNode, Node } from "../types/cluster";
 import type { ClusterAction } from "../state/clusterReducer";
 import { mergeRows } from "../state/clusterReducer";
-import { buildMerkleTree, findLeafForRange } from "../lib/merkleTree";
+import { buildMerkleTree, findLeafForRange, REPAIR_MERKLE_DEPTH } from "../lib/merkleTree";
 import { getConsistentReplicaSetForRange } from "../lib/replicaPlacement";
 
 interface RepairViewProps {
   cluster: Cluster;
   dispatch: React.Dispatch<ClusterAction>;
 }
-
-const TREE_DEPTH = 2;
 
 function collectLeaves(tree: MerkleNode): MerkleNode[] {
   const leaves: MerkleNode[] = [];
@@ -125,7 +123,7 @@ export function RepairView({ cluster, dispatch }: RepairViewProps) {
   for (const node of cluster.nodes) {
     const allRows = [...node.storage.memtable, ...node.storage.sstables.flatMap((s) => s.rows)];
     const merged = mergeRows(allRows, cluster.gcGraceSeconds);
-    trees.set(node.id, buildMerkleTree(merged, cluster.tokenRange, TREE_DEPTH));
+    trees.set(node.id, buildMerkleTree(merged, cluster.tokenRange, REPAIR_MERKLE_DEPTH));
   }
 
   const activeKeyspace = cluster.keyspaces.find((k) => k.id === cluster.activeKeyspaceId);

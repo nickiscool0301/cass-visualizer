@@ -1,5 +1,7 @@
 import type { MerkleNode, StoredRow } from "../types/cluster";
 
+export const REPAIR_MERKLE_DEPTH = 3;
+
 export function hashString(input: string): string {
   let hash = 5381;
   for (let i = 0; i < input.length; i++) {
@@ -38,16 +40,17 @@ function leafHash(rows: StoredRow[], tokenRange: [number, number]): string {
 export function buildMerkleTree(
   rows: StoredRow[],
   tokenRange: [number, number],
-  depth: number = 3
+  depth: number = REPAIR_MERKLE_DEPTH,
+  fullTokenRange: [number, number] = tokenRange
 ): MerkleNode {
   const [start, end] = tokenRange;
 
   if (depth === 0 || start === end) {
     const rowsInRange = rows.filter((r) =>
-      tokenInRange(hashPartitionKey(r.partitionKey, tokenRange), tokenRange)
+      tokenInRange(hashPartitionKey(r.partitionKey, fullTokenRange), tokenRange)
     );
     return {
-      hash: leafHash(rowsInRange, tokenRange),
+      hash: leafHash(rowsInRange, fullTokenRange),
       range: tokenRange,
     };
   }
@@ -58,14 +61,16 @@ export function buildMerkleTree(
   const rightRange: [number, number] = [mid + 1, end];
 
   const left = buildMerkleTree(
-    rows.filter((r) => tokenInRange(hashPartitionKey(r.partitionKey, tokenRange), leftRange)),
+    rows.filter((r) => tokenInRange(hashPartitionKey(r.partitionKey, fullTokenRange), leftRange)),
     leftRange,
-    depth - 1
+    depth - 1,
+    fullTokenRange
   );
   const right = buildMerkleTree(
-    rows.filter((r) => tokenInRange(hashPartitionKey(r.partitionKey, tokenRange), rightRange)),
+    rows.filter((r) => tokenInRange(hashPartitionKey(r.partitionKey, fullTokenRange), rightRange)),
     rightRange,
-    depth - 1
+    depth - 1,
+    fullTokenRange
   );
 
   const children = [left, right];

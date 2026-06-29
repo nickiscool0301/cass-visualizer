@@ -74,7 +74,7 @@ describe("clusterReducer repair actions", () => {
 
     expect(state.events.some((e) => e.message === "Repair started")).toBe(true);
     expect(state.events.some((e) => e.message === "Repair: 1 mismatching range found")).toBe(true);
-    expect(state.events.some((e) => e.message.match(/Repair: streamed \d+ row/s) && e.message.includes("to"))).toBe(true);
+    expect(state.events.some((e) => e.message.match(/Repair: streamed \d+ rows? to/))).toBe(true);
     expect(state.animation.repairingNodeId).not.toBeNull();
   });
 
