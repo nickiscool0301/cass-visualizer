@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { Cluster, CompactionStrategy } from "../types/cluster";
 import type { ClusterAction } from "../state/clusterReducer";
+import { TabGuide } from "./TabGuide";
 
 interface CanvasToolbarProps {
   cluster: Cluster;
@@ -40,13 +41,16 @@ export function CanvasToolbar({ cluster, dispatch }: CanvasToolbarProps) {
 
   return (
     <div className="flex flex-wrap items-start justify-between gap-3 border-b pb-3" style={{ borderColor: "var(--border-subtle)" }}>
-      <div>
-        <h1 className="text-base font-semibold" style={{ color: "var(--text-primary)" }}>
-          {titles[cluster.activeTab]}
-        </h1>
-        <p className="text-xs" style={{ color: "var(--text-tertiary)" }}>
-          {subtitle}
-        </p>
+      <div className="flex items-start gap-2">
+        <div>
+          <h1 className="text-base font-semibold" style={{ color: "var(--text-primary)" }}>
+            {titles[cluster.activeTab]}
+          </h1>
+          <p className="text-xs" style={{ color: "var(--text-tertiary)" }}>
+            {subtitle}
+          </p>
+        </div>
+        {cluster.activeTab !== "knowledge" && <TabGuide tab={cluster.activeTab} />}
       </div>
 
       <div className="flex flex-wrap items-center gap-2 text-xs">

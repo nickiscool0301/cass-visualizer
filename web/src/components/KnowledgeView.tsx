@@ -626,6 +626,73 @@ function ModelingTopic() {
   );
 }
 
+function SimulatorGuidesTopic() {
+  return (
+    <>
+      <H2>6. Simulator Tab Guides</H2>
+      <P>
+        The visualizer is organized into interactive tabs. Each tab focuses on one Cassandra subsystem. 
+        Click the <strong>?</strong> button in the toolbar of any tab to open its contextual usage guide.
+      </P>
+
+      <H3>Topology Tab</H3>
+      <Ol>
+        <Li>Use <strong>Add node</strong> / <strong>Remove</strong> to change the cluster size.</Li>
+        <Li><strong>Rebalance</strong> redistributes token ranges evenly across nodes.</Li>
+        <Li>Click a node token to toggle it online or offline (used by hinted handoffs).</Li>
+        <Li>Adjust <strong>RF</strong> with the slider to see how replica placement changes.</Li>
+      </Ol>
+      <Callout type="tip">
+        Offline nodes are dimmed on the ring. Writes that target a down replica store a hint on the coordinator.
+      </Callout>
+
+      <H3>Storage Tab</H3>
+      <Ol>
+        <Li>Enter a partition key and value, then click <strong>Write</strong>.</Li>
+        <Li>Use <strong>Delete</strong> to write a tombstone, or set <strong>TTL (s)</strong> to auto-expire a row.</Li>
+        <Li>Click <strong>Advance TTL</strong> to convert expired TTL rows into tombstones.</Li>
+        <Li><strong>Flush Memtable</strong> persists in-memory rows into an immutable SSTable.</Li>
+        <Li>Click any SSTable to inspect rows (green = active, red = tombstone).</Li>
+        <Li>Use the <strong>Read Simulator</strong> to query a key and trigger read repair if replicas differ.</Li>
+      </Ol>
+      <Callout type="warning">
+        Tombstones older than <Code>gc_grace_seconds</Code> are purged during compaction; set this value in the Storage tab.
+      </Callout>
+
+      <H3>Compaction Tab</H3>
+      <Ol>
+        <Li>Write data in the Storage tab, then flush memtables.</Li>
+        <Li>Switch to Compaction and click <strong>Compact</strong> on a node.</Li>
+        <Li>Watch SSTables merge according to the active strategy (STCS or LCS).</Li>
+        <Li>Click an SSTable badge to inspect its merged rows.</Li>
+      </Ol>
+      <Callout type="tip">
+        STCS merges tiers of similarly-sized SSTables; LCS organizes SSTables into fixed-size levels.
+      </Callout>
+
+      <H3>Repair Tab</H3>
+      <Ol>
+        <Li>Use <strong>Write to this node only</strong> to simulate a node that missed writes.</Li>
+        <Li>Click <strong>Run Repair</strong> to build Merkle trees and stream missing ranges.</Li>
+        <Li>Mismatched leaf ranges are highlighted in the tree visualization.</Li>
+      </Ol>
+      <Callout type="info">
+        Only replicas for the active keyspace RF are compared. Ranges crossing token-ownership boundaries are skipped.
+      </Callout>
+
+      <H3>LWT Tab</H3>
+      <Ol>
+        <Li>Enter a partition key and value, then click <strong>Transactional Write</strong>.</Li>
+        <Li>Watch the 4-phase Paxos indicator: Prepare → Promise → Propose → Accept → Commit.</Li>
+        <Li>Use <strong>Simulate Contention</strong> to race two clients for the same key.</Li>
+      </Ol>
+      <Callout type="warning">
+        LWT requires a majority of live replicas. The second contender uses a higher ballot and wins in the contention simulation.
+      </Callout>
+    </>
+  );
+}
+
 function K8ssandraTopic() {
   return (
     <>
@@ -723,7 +790,7 @@ function K8ssandraTopic() {
 }
 
 export function KnowledgeView() {
-  const [selectedTopic, setSelectedTopic] = useState<"architecture" | "storage" | "consistency" | "modeling" | "k8ssandra">("architecture");
+  const [selectedTopic, setSelectedTopic] = useState<"architecture" | "storage" | "consistency" | "modeling" | "k8ssandra" | "guides">("architecture");
 
   const topics: { id: typeof selectedTopic; label: string; icon: React.ReactNode }[] = [
     {
@@ -769,6 +836,17 @@ export function KnowledgeView() {
           <rect x="3" y="3" width="18" height="18" rx="2" />
           <path d="M3 9h18" />
           <path d="M9 21V9" />
+        </svg>
+      ),
+    },
+    {
+      id: "guides",
+      label: "Simulator Guides",
+      icon: (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5">
+          <circle cx="12" cy="12" r="10" />
+          <path d="M12 16v-4" />
+          <path d="M12 8h.01" />
         </svg>
       ),
     },
@@ -830,6 +908,7 @@ export function KnowledgeView() {
           {selectedTopic === "storage" && <StorageTopic />}
           {selectedTopic === "consistency" && <ConsistencyTopic />}
           {selectedTopic === "modeling" && <ModelingTopic />}
+          {selectedTopic === "guides" && <SimulatorGuidesTopic />}
           {selectedTopic === "k8ssandra" && <K8ssandraTopic />}
         </section>
 
