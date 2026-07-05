@@ -13,6 +13,7 @@ import type {
 } from "../types/cluster";
 import { buildMerkleTree, collectLeafRanges, findLeafForRange, hashPartitionKey, REPAIR_MERKLE_DEPTH } from "../lib/merkleTree";
 import { getAllTokenPoints, getConsistentReplicaSetForRange, getReplicaNodeIds } from "../lib/replicaPlacement";
+import { accept, createPaxosState, prepare, promise, accepted as paxosAccepted } from "../lib/paxos";
 
 const palette = [
   "#ef4444", // red-500
@@ -73,7 +74,7 @@ function allocateColor(nodes: Node[]): string {
 }
 
 function createEmptyStorage(): NodeStorage {
-  return { commitLog: [], memtable: [], sstables: [], hints: [] };
+  return { commitLog: [], memtable: [], sstables: [], hints: [], paxosProposals: {} };
 }
 
 function rangeSize(start: number, end: number, tokenRange: [number, number]): number {
@@ -239,6 +240,102 @@ function digestEqual(a: StoredRow | undefined, b: StoredRow | undefined): boolea
   return a.value === b.value && a.timestamp === b.timestamp && !!a.isTombstone === !!b.isTombstone;
 }
 
+function getPaxosState(storage: NodeStorage, partitionKey: string) {
+  return storage.paxosProposals[partitionKey] ?? createPaxosState();
+}
+
+function setPaxosState(storage: NodeStorage, partitionKey: string, paxosState: import("../types/cluster").PaxosState): NodeStorage {
+  return {
+    ...storage,
+    paxosProposals: { ...storage.paxosProposals, [partitionKey]: paxosState },
+  };
+}
+
+function runPaxosPropose(
+  state: Cluster,
+  partitionKey: string,
+  value: string,
+  ballotOverride?: number
+): {
+  state: Cluster;
+  committed: boolean;
+  winningValue: string;
+  coordinatorId: string;
+} {
+  const token = hashPartitionKey(partitionKey, state.tokenRange);
+  const activeKeyspace = state.keyspaces.find((k) => k.id === state.activeKeyspaceId);
+  const rf = activeKeyspace?.replicationFactor ?? 1;
+  const replicaIds = getReplicaNodeIds(token, rf, state.nodes);
+  const liveReplicaIds = replicaIds.filter((id) => state.nodes.find((n) => n.id === id)!.status === "up");
+  const coordinatorId = liveReplicaIds[0] ?? state.nodes.find((n) => n.status === "up")?.id ?? "";
+  const ballot = ballotOverride ?? now();
+
+  // Phase 1: Prepare
+  let nodesAfterPrepare = state.nodes.map((node) => {
+    if (!liveReplicaIds.includes(node.id)) return node;
+    const ps = getPaxosState(node.storage, partitionKey);
+    const result = prepare(ps, ballot);
+    if (!result.ok) return node;
+    return { ...node, storage: setPaxosState(node.storage, partitionKey, promise(ps, ballot)) };
+  });
+
+  const promises = nodesAfterPrepare.filter((n) => {
+    if (!liveReplicaIds.includes(n.id)) return false;
+    const ps = getPaxosState(n.storage, partitionKey);
+    return ps.promisedBallot >= ballot;
+  }).length;
+  const majority = Math.floor(liveReplicaIds.length / 2) + 1;
+
+  if (promises < majority) {
+    return { state: { ...state, nodes: nodesAfterPrepare }, committed: false, winningValue: value, coordinatorId };
+  }
+
+  // Phase 2: Choose value (use already accepted value if any)
+  let proposedValue = value;
+  for (const node of nodesAfterPrepare) {
+    if (!liveReplicaIds.includes(node.id)) continue;
+    const ps = getPaxosState(node.storage, partitionKey);
+    if (ps.acceptedValue !== null) {
+      proposedValue = ps.acceptedValue;
+      break;
+    }
+  }
+
+  // Phase 3: Accept
+  let nodesAfterAccept = nodesAfterPrepare.map((node) => {
+    if (!liveReplicaIds.includes(node.id)) return node;
+    const ps = getPaxosState(node.storage, partitionKey);
+    if (!accept(ps, ballot, proposedValue)) return node;
+    return { ...node, storage: setPaxosState(node.storage, partitionKey, paxosAccepted(ps, ballot, proposedValue)) };
+  });
+
+  const accepts = nodesAfterAccept.filter((n) => {
+    if (!liveReplicaIds.includes(n.id)) return false;
+    const ps = getPaxosState(n.storage, partitionKey);
+    return ps.acceptedBallot === ballot && ps.acceptedValue === proposedValue;
+  }).length;
+
+  if (accepts < majority) {
+    return { state: { ...state, nodes: nodesAfterAccept }, committed: false, winningValue: proposedValue, coordinatorId };
+  }
+
+  // Phase 4: Commit
+  const timestamp = now();
+  const committedNodes = nodesAfterAccept.map((node) => {
+    if (!liveReplicaIds.includes(node.id)) return node;
+    const row: StoredRow = { partitionKey, value: proposedValue, timestamp };
+    const storage = writeRowToNode(node.storage, row);
+    return { ...node, storage };
+  });
+
+  return {
+    state: { ...state, nodes: committedNodes },
+    committed: true,
+    winningValue: proposedValue,
+    coordinatorId,
+  };
+}
+
 function expireTTLRows(storage: NodeStorage, currentTime: number): NodeStorage {
   let changed = false;
   const nextMemtable = storage.memtable.map((row) => {
@@ -379,7 +476,7 @@ export function createInitialCluster(): Cluster {
     selectedNodeId: null,
     activeKeyspaceId: keyspace.id,
     activeTab: "topology",
-    animation: { writeTargetNodeId: null, flushedNodeId: null, joiningNodeId: null, compactedNodeId: null, repairingNodeId: null, lastWriteAction: null, readCoordinatorNodeId: null, readRepairTargetNodeIds: [] },
+    animation: { writeTargetNodeId: null, flushedNodeId: null, joiningNodeId: null, compactedNodeId: null, repairingNodeId: null, lastWriteAction: null, readCoordinatorNodeId: null, readRepairTargetNodeIds: [], paxosPhase: null, paxosCoordinatorNodeId: null },
     lastReadResult: null,
     gcGraceSeconds: 10,
   };
@@ -396,7 +493,7 @@ export type ClusterAction =
   | { type: "RESET_CLUSTER" }
   | { type: "SELECT_NODE"; nodeId: string | null }
   | { type: "SET_ACTIVE_KEYSPACE"; keyspaceId: string }
-  | { type: "SET_ACTIVE_TAB"; tab: "topology" | "storage" | "compaction" | "repair" | "knowledge" }
+  | { type: "SET_ACTIVE_TAB"; tab: "topology" | "storage" | "compaction" | "repair" | "lwt" | "knowledge" }
   | { type: "WRITE"; partitionKey: string; value: string }
   | { type: "WRITE_TO_NODE"; nodeId: string; partitionKey: string; value: string }
   | { type: "WRITE_TTL"; partitionKey: string; value: string; ttlSeconds: number }
@@ -410,7 +507,10 @@ export type ClusterAction =
   | { type: "CLEAR_ANIMATION" }
   | { type: "TOGGLE_NODE_STATUS"; nodeId: string }
   | { type: "BRING_NODE_ONLINE"; nodeId: string }
-  | { type: "SEND_HINTS"; nodeId: string };
+  | { type: "SEND_HINTS"; nodeId: string }
+  | { type: "LWT_PROPOSE"; partitionKey: string; value: string }
+  | { type: "LWT_COMMIT"; partitionKey: string; value: string; ballot: number }
+  | { type: "LWT_CONTEND"; partitionKey: string; valueA: string; valueB: string };
 
 export function clusterReducer(state: Cluster, action: ClusterAction): Cluster {
   switch (action.type) {
@@ -1034,7 +1134,65 @@ export function clusterReducer(state: Cluster, action: ClusterAction): Cluster {
     }
 
     case "CLEAR_ANIMATION": {
-      return { ...state, animation: { writeTargetNodeId: null, flushedNodeId: null, joiningNodeId: null, compactedNodeId: null, repairingNodeId: null, lastWriteAction: null, readCoordinatorNodeId: null, readRepairTargetNodeIds: [] } };
+      return { ...state, animation: { writeTargetNodeId: null, flushedNodeId: null, joiningNodeId: null, compactedNodeId: null, repairingNodeId: null, lastWriteAction: null, readCoordinatorNodeId: null, readRepairTargetNodeIds: [], paxosPhase: null, paxosCoordinatorNodeId: null } };
+    }
+
+    case "LWT_PROPOSE": {
+      const result = runPaxosPropose(state, action.partitionKey, action.value);
+      const message = result.committed
+        ? `LWT ${action.partitionKey}=${result.winningValue} committed`
+        : `LWT ${action.partitionKey} rejected: no majority`;
+      return {
+        ...result.state,
+        events: addEvent(result.state.events, message),
+        animation: {
+          ...result.state.animation,
+          paxosPhase: result.committed ? "commit" : "prepare",
+          paxosCoordinatorNodeId: result.coordinatorId,
+        },
+      };
+    }
+
+    case "LWT_COMMIT": {
+      const token = hashPartitionKey(action.partitionKey, state.tokenRange);
+      const activeKeyspace = state.keyspaces.find((k) => k.id === state.activeKeyspaceId);
+      const rf = activeKeyspace?.replicationFactor ?? 1;
+      const replicaIds = getReplicaNodeIds(token, rf, state.nodes);
+      const nodes = state.nodes.map((node) => {
+        if (!replicaIds.includes(node.id)) return node;
+        const ps = getPaxosState(node.storage, action.partitionKey);
+        if (ps.promisedBallot > action.ballot) return node;
+        const row: StoredRow = { partitionKey: action.partitionKey, value: action.value, timestamp: now() };
+        return { ...node, storage: writeRowToNode(node.storage, row) };
+      });
+      return {
+        ...state,
+        nodes,
+        events: addEvent(state.events, `LWT ${action.partitionKey}=${action.value} committed (ballot ${action.ballot})`),
+        animation: { ...state.animation, paxosPhase: "commit", paxosCoordinatorNodeId: replicaIds[0] ?? null },
+      };
+    }
+
+    case "LWT_CONTEND": {
+      const resultA = runPaxosPropose(state, action.partitionKey, action.valueA);
+      if (!resultA.committed) {
+        return {
+          ...resultA.state,
+          events: addEvent(resultA.state.events, `Contention on ${action.partitionKey}: client A could not commit`),
+        };
+      }
+      const ballotB = now() + 1;
+      const resultB = runPaxosPropose(resultA.state, action.partitionKey, action.valueB, ballotB);
+      const winner = resultB.committed ? action.valueB : resultA.winningValue;
+      const loser = resultB.committed ? action.valueA : action.valueB;
+      return {
+        ...resultB.state,
+        events: addEvent(
+          resultB.state.events,
+          `Contention on ${action.partitionKey}: client ${resultB.committed ? "B" : "A"} won with ${winner}; client ${resultB.committed ? "A" : "B"} retried with ${loser}`
+        ),
+        animation: { ...resultB.state.animation, paxosPhase: "commit", paxosCoordinatorNodeId: resultB.coordinatorId },
+      };
     }
 
     case "TOGGLE_NODE_STATUS": {

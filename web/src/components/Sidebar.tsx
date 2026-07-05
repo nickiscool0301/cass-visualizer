@@ -1,6 +1,6 @@
 import type { ClusterAction } from "../state/clusterReducer";
 
-type Tab = "topology" | "storage" | "compaction" | "repair" | "knowledge";
+type Tab = "topology" | "storage" | "compaction" | "repair" | "lwt" | "knowledge";
 
 interface SidebarProps {
   activeTab: Tab;
@@ -82,6 +82,23 @@ const items: { tab: Tab; label: string; icon: React.ReactNode }[] = [
         className="h-4 w-4"
       >
         <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
+      </svg>
+    ),
+  },
+  {
+    tab: "lwt",
+    label: "LWT",
+    icon: (
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className="h-4 w-4"
+      >
+        <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
       </svg>
     ),
   },

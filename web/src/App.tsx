@@ -10,6 +10,7 @@ import { WriteSimulator } from "./components/WriteSimulator";
 import { ReadSimulator } from "./components/ReadSimulator";
 import { CompactionView } from "./components/CompactionView";
 import { RepairView } from "./components/RepairView";
+import { LWTSimulator } from "./components/LWTSimulator";
 import { KnowledgeView } from "./components/KnowledgeView";
 
 function App() {
@@ -21,7 +22,8 @@ function App() {
       cluster.animation.compactedNodeId === null &&
       cluster.animation.repairingNodeId === null &&
       cluster.animation.readCoordinatorNodeId === null &&
-      cluster.animation.readRepairTargetNodeIds.length === 0
+      cluster.animation.readRepairTargetNodeIds.length === 0 &&
+      cluster.animation.paxosPhase === null
     )
       return;
     const timer = setTimeout(() => dispatch({ type: "CLEAR_ANIMATION" }), 1600);
@@ -32,6 +34,7 @@ function App() {
     cluster.animation.repairingNodeId,
     cluster.animation.readCoordinatorNodeId,
     cluster.animation.readRepairTargetNodeIds,
+    cluster.animation.paxosPhase,
     dispatch,
   ]);
 
@@ -55,6 +58,7 @@ function App() {
             {cluster.activeTab === "storage" && <StorageView cluster={cluster} dispatch={dispatch} />}
             {cluster.activeTab === "compaction" && <CompactionView cluster={cluster} dispatch={dispatch} />}
             {cluster.activeTab === "repair" && <RepairView cluster={cluster} dispatch={dispatch} />}
+            {cluster.activeTab === "lwt" && <LWTSimulator cluster={cluster} dispatch={dispatch} />}
             {cluster.activeTab === "knowledge" && <KnowledgeView />}
           </section>
         </div>

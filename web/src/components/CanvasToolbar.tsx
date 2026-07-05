@@ -12,6 +12,7 @@ const titles: Record<CanvasToolbarProps["cluster"]["activeTab"], string> = {
   storage: "Storage Engine",
   compaction: "Compaction",
   repair: "Anti-Entropy Repair",
+  lwt: "Lightweight Transactions",
   knowledge: "Knowledge Base",
 };
 

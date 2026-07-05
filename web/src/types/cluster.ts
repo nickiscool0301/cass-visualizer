@@ -31,11 +31,18 @@ export interface SSTable {
   level: number;
 }
 
+export interface PaxosState {
+  promisedBallot: number;
+  acceptedBallot: number | null;
+  acceptedValue: string | null;
+}
+
 export interface NodeStorage {
   commitLog: StoredRow[];
   memtable: StoredRow[];
   sstables: SSTable[];
   hints: Hint[];
+  paxosProposals: Record<string, PaxosState>;
 }
 
 export interface Node {
@@ -62,6 +69,13 @@ export interface ClusterEvent {
   message: string;
 }
 
+export interface PaxosProposal {
+  ballot: number;
+  partitionKey: string;
+  value: string;
+  phase: "prepare" | "promise" | "propose" | "accept" | "commit";
+}
+
 export interface ClusterAnimation {
   writeTargetNodeId: string | null;
   flushedNodeId: string | null;
@@ -71,6 +85,8 @@ export interface ClusterAnimation {
   lastWriteAction: "write" | "write_ttl" | "delete" | null;
   readCoordinatorNodeId: string | null;
   readRepairTargetNodeIds: string[];
+  paxosPhase: PaxosProposal["phase"] | null;
+  paxosCoordinatorNodeId: string | null;
 }
 
 export interface ReadRepairState {
@@ -89,7 +105,7 @@ export interface Cluster {
   events: ClusterEvent[];
   selectedNodeId: string | null;
   activeKeyspaceId: string | null;
-  activeTab: "topology" | "storage" | "compaction" | "repair" | "knowledge";
+  activeTab: "topology" | "storage" | "compaction" | "repair" | "lwt" | "knowledge";
   animation: ClusterAnimation;
   gcGraceSeconds: number;
   lastReadResult: ReadRepairState | null;
