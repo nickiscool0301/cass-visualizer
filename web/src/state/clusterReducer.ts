@@ -227,11 +227,19 @@ function replayHintsForNode(
   return { nodes: finalNodes, replayCount: rowsToReplay.length };
 }
 
+function isBetterRow(candidate: StoredRow, current: StoredRow): boolean {
+  if (candidate.timestamp > current.timestamp) return true;
+  if (candidate.timestamp < current.timestamp) return false;
+  if (candidate.isTombstone && !current.isTombstone) return true;
+  if (!candidate.isTombstone && current.isTombstone) return false;
+  return candidate.value > current.value;
+}
+
 function findLatestRow(storage: NodeStorage, partitionKey: string): StoredRow | undefined {
   const allRows = [...storage.memtable, ...storage.sstables.flatMap((s) => s.rows)];
   const matches = allRows.filter((r) => r.partitionKey === partitionKey);
   if (matches.length === 0) return undefined;
-  return matches.reduce((latest, row) => (row.timestamp > latest.timestamp ? row : latest));
+  return matches.reduce((latest, row) => (isBetterRow(row, latest) ? row : latest));
 }
 
 function digestEqual(a: StoredRow | undefined, b: StoredRow | undefined): boolean {
@@ -290,14 +298,15 @@ function runPaxosPropose(
     return { state: { ...state, nodes: nodesAfterPrepare }, committed: false, winningValue: value, coordinatorId };
   }
 
-  // Phase 2: Choose value (use already accepted value if any)
+  // Phase 2: Choose value (use the value with the highest accepted ballot, if any)
   let proposedValue = value;
+  let highestAcceptedBallot = -1;
   for (const node of nodesAfterPrepare) {
     if (!liveReplicaIds.includes(node.id)) continue;
     const ps = getPaxosState(node.storage, partitionKey);
-    if (ps.acceptedValue !== null) {
+    if (ps.acceptedValue !== null && ps.acceptedBallot !== null && ps.acceptedBallot > highestAcceptedBallot) {
+      highestAcceptedBallot = ps.acceptedBallot;
       proposedValue = ps.acceptedValue;
-      break;
     }
   }
 
@@ -364,7 +373,7 @@ export function mergeRows(rows: StoredRow[], gcGraceSeconds: number): StoredRow[
   const byKey = new Map<string, StoredRow>();
   for (const row of rows) {
     const existing = byKey.get(row.partitionKey);
-    if (!existing || row.timestamp > existing.timestamp) {
+    if (!existing || isBetterRow(row, existing)) {
       byKey.set(row.partitionKey, row);
     }
   }

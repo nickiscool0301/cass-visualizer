@@ -33,7 +33,7 @@ function leafHash(rows: StoredRow[], tokenRange: [number, number]): string {
     if (tokenDiff !== 0) return tokenDiff;
     return a.partitionKey.localeCompare(b.partitionKey);
   });
-  const payload = sorted.map((r) => `${r.partitionKey}|${r.value}|${r.timestamp}`).join("#");
+  const payload = sorted.map((r) => `${r.partitionKey}|${r.value}|${r.timestamp}|${!!r.isTombstone}|${r.expiresAt ?? ""}`).join("#");
   return hashString(payload);
 }
 
