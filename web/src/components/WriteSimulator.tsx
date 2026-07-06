@@ -69,33 +69,36 @@ export function WriteSimulator({ cluster, dispatch }: WriteSimulatorProps) {
         Write Simulator
       </h2>
 
-      <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1fr_auto_auto]">
-        <input
-          type="text"
-          placeholder="Partition key"
-          value={key}
-          onChange={(e) => setKey(e.target.value)}
-          disabled={isAnimating}
-          className="input min-w-0 disabled:opacity-50"
-        />
-        <input
-          type="text"
-          placeholder="Value"
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          disabled={isAnimating}
-          className="input min-w-0 disabled:opacity-50"
-        />
-        <input
-          type="number"
-          min={1}
-          placeholder="TTL (s)"
-          value={ttlSeconds}
-          onChange={(e) => setTtlSeconds(e.target.value)}
-          disabled={isAnimating}
-          className="input min-w-0 disabled:opacity-50"
-        />
-        <div className="flex gap-2">
+      <div className="mt-3 space-y-2">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <input
+            type="text"
+            placeholder="Partition key"
+            value={key}
+            onChange={(e) => setKey(e.target.value)}
+            disabled={isAnimating}
+            className="input min-w-0 disabled:opacity-50"
+          />
+          <input
+            type="text"
+            placeholder="Value"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            disabled={isAnimating}
+            className="input min-w-0 disabled:opacity-50"
+          />
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            type="number"
+            min={1}
+            placeholder="TTL (s)"
+            value={ttlSeconds}
+            onChange={(e) => setTtlSeconds(e.target.value)}
+            disabled={isAnimating}
+            className="input w-24 disabled:opacity-50"
+          />
           <button
             onClick={handleWrite}
             disabled={!key.trim() || !value.trim() || isAnimating}
@@ -110,28 +113,26 @@ export function WriteSimulator({ cluster, dispatch }: WriteSimulatorProps) {
           >
             Delete
           </button>
+          <button
+            onClick={handleTickTTL}
+            className="btn-ghost ml-auto text-[11px]"
+          >
+            Advance TTL
+          </button>
         </div>
       </div>
 
-      <div className="mt-2 flex items-center justify-between text-[11px]" style={{ color: "var(--text-tertiary)" }}>
-        <span>
-          Active keyspace:{" "}
-          <span style={{ color: "var(--text-primary)" }}>
-            {activeKeyspace?.name ?? "none"} (RF={activeKeyspace?.replicationFactor ?? 0})
-          </span>
-          {targetNode && (
-            <span style={{ color: "var(--accent)" }}>
-              {" "}
-              → {actionTypeLabel[cluster.animation.lastWriteAction ?? "write"]} on {targetNode.name}
-            </span>
-          )}
+      <div className="mt-2 text-[11px]" style={{ color: "var(--text-tertiary)" }}>
+        Active keyspace:{" "}
+        <span style={{ color: "var(--text-primary)" }}>
+          {activeKeyspace?.name ?? "none"} (RF={activeKeyspace?.replicationFactor ?? 0})
         </span>
-        <button
-          onClick={handleTickTTL}
-          className="btn-ghost py-1 px-2 text-[11px]"
-        >
-          Advance TTL
-        </button>
+        {targetNode && (
+          <span style={{ color: "var(--accent)" }}>
+            {" "}
+            → {actionTypeLabel[cluster.animation.lastWriteAction ?? "write"]} on {targetNode.name}
+          </span>
+        )}
       </div>
     </div>
   );
